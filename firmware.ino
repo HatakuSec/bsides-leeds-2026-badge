@@ -63,6 +63,7 @@ uint8_t state;
 static uint8_t gAnimMode;
 static uint8_t artieForced = 0;
 static uint8_t artieTouchLatch = 0;
+static uint8_t demoStep = 0;
 
 uint16_t randomState = 0xACE1u;
 
@@ -665,6 +666,26 @@ static const uint16_t MASK_LOOK_L = 0x1E0;  // bits 5,6,7,8
 static const uint16_t MASK_LOOK_R = 0x01E;  // bits 1,2,3,4
 static const uint16_t MASK_FULL   = 0x1FF;  // bits 0-8
 
+// Demo sequence: {emote, duration, arg}
+static const uint8_t demoSeq[][3] PROGMEM = {
+  {EMOTE_CALM,       35, 0},
+  {EMOTE_BLINK,       6, 0},
+  {EMOTE_DBLBLINK,   10, 0},
+  {EMOTE_LOOK,       45, 0},
+  {EMOTE_LOOK,       45, 3},
+  {EMOTE_LOOK,       45, 5},
+  {EMOTE_SCAN,       60, 4},
+  {EMOTE_HAPPY,      45, 0},
+  {EMOTE_SLEEPY,     55, 0},
+  {EMOTE_WINK,       24, 1},
+  {EMOTE_THINKING,   50, 0},
+  {EMOTE_SUSPICIOUS, 40, 0},
+  {EMOTE_ALERT,      55, 0},
+  {EMOTE_EXCITED,    50, 0},
+  {EMOTE_STARTLED,   28, 0},
+};
+static const uint8_t DEMO_SEQ_LEN = sizeof(demoSeq) / 3;
+
 uint8_t artieAliveMode(uint16_t step)
 {
   if (step == 0) {
@@ -724,11 +745,11 @@ uint8_t artieAliveMode(uint16_t step)
   } else {
     // ARTIE_IDLE
 
-    // --- Touch reaction detection ---
+    // --- Touch reaction detection (suppressed during demo) ---
     uint8_t tm = getPressedTouchMask();
     if (tm == 0) {
       artieTouchLatch = 0;
-    } else if (tm != artieTouchLatch) {
+    } else if (artieForced != 7 && tm != artieTouchLatch) {
       uint8_t nf = 0;
       if (tm & LEFT_BLUE_MASK) nf = 1;
       else if (tm & RIGHT_BLUE_MASK) nf = 2;
@@ -746,6 +767,24 @@ uint8_t artieAliveMode(uint16_t step)
         else if (nf == 4) artie.emote = EMOTE_SUSPICIOUS;
         else if (nf == 5) artie.emote = EMOTE_EXCITED;
         else artie.emote = EMOTE_HAPPY;
+      }
+    }
+
+    // --- Demo advancement ---
+    if (artieForced == 7 && artie.duration == 0) {
+      if (demoStep >= DEMO_SEQ_LEN) {
+        artieForced = 0;
+        demoStep = 0;
+        artie.emote = EMOTE_CALM;
+        artie.subStep = 0;
+        artie.duration = 25 + (nextRandomByte() & 0x2F);
+        artie.arg = 0;
+      } else {
+        artie.emote = pgm_read_byte(&demoSeq[demoStep][0]);
+        artie.duration = pgm_read_byte(&demoSeq[demoStep][1]);
+        artie.arg = pgm_read_byte(&demoSeq[demoStep][2]);
+        artie.subStep = 0;
+        demoStep++;
       }
     }
 
@@ -915,7 +954,11 @@ uint8_t artieAliveMode(uint16_t step)
     // --- Step advancement ---
     artie.subStep++;
     if (artieForced != 0) {
-      if (artie.subStep >= 240) artie.subStep = 0;
+      if (artieForced == 7) {
+        if (artie.subStep >= artie.duration) artie.duration = 0;
+      } else {
+        if (artie.subStep >= 240) artie.subStep = 0;
+      }
     } else if (artie.subStep >= artie.duration) {
       if (artie.emote != EMOTE_CALM) {
         artie.emote = EMOTE_CALM;
@@ -1013,6 +1056,13 @@ void handleWakeButtonPress(
       case LEFT_GREEN_MASK:
         artieForced = 0; artieTouchLatch = 0;
         playFollowTheSequence();
+        break;
+      case (RIGHT_GREEN_MASK | RIGHT_RED_MASK | RIGHT_BLUE_MASK):
+        if (gAnimMode == 0) {
+          artieForced = 7;
+          demoStep = 0;
+          artie.duration = 0;
+        }
         break;
     }
   }
