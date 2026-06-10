@@ -1,0 +1,113 @@
+name: Build badge firmware
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compile ATtiny814 firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install arduino-cli
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -fsSL https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Linux_64bit.tar.gz \
+            | tar xz -C "$HOME/bin" arduino-cli
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Install megaTinyCore
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls http://drazzy.com/package_drazzy.com_index.json
+          arduino-cli core update-index
+          arduino-cli core install megaTinyCore:megaavr@2.6.11
+
+      - name: Compile and report flash headroom
+        shell: bash --noprofile --norc {0}
+        run: |
+          set -u
+          FQBN="megaTinyCore:megaavr:atxy4:chip=814"
+          MAX=8192
+          WARN_THRESHOLD=32
+
+          # Arduino CLI requires .ino in a folder with the same base name.
+          mkdir -p build/firmware
+          cp firmware.ino build/firmware/firmware.ino
+
+          if arduino-cli compile --fqbn "$FQBN" --output-dir out --warnings all build/firmware \
+               > build.log 2>&1; then
+            rc=0
+          else
+            rc=$?
+          fi
+
+          # Parse flash usage from compiler output.
+          if grep -qE 'Sketch uses [0-9]+ bytes' build.log; then
+            used=$(grep -oE 'Sketch uses [0-9]+' build.log | grep -oE '[0-9]+')
+            free=$((MAX - used))
+            st="PASS"
+          elif grep -qE 'overflowed by [0-9]+ bytes' build.log; then
+            over=$(grep -oE 'overflowed by [0-9]+' build.log | grep -oE '[0-9]+')
+            used=$((MAX + over))
+            free=$((-over))
+            st="OVERFLOW"
+          else
+            used=0
+            free=0
+            st="BUILD ERROR"
+          fi
+
+          pct=$(awk "BEGIN{printf \"%.1f\", $used*100/$MAX}")
+
+          # Warn if headroom is tight.
+          if [ "$free" -ge 0 ] && [ "$free" -lt "$WARN_THRESHOLD" ]; then
+            st="WARN (< ${WARN_THRESHOLD} bytes free)"
+            echo "::warning::Flash headroom is very tight: only ${free} bytes free (threshold: ${WARN_THRESHOLD})"
+          fi
+
+          # Step summary.
+          {
+            echo "## Badge Firmware Build"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| Flash used | ${used} / ${MAX} bytes |"
+            echo "| Flash free | ${free} bytes |"
+            echo "| Percentage | ${pct}% |"
+            echo "| Status | ${st} |"
+            echo ""
+            if [ "$free" -lt "$WARN_THRESHOLD" ] && [ "$free" -ge 0 ]; then
+              echo "> **Warning:** fewer than ${WARN_THRESHOLD} bytes free. Adding code is risky."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Flash: ${used}/${MAX} (${pct}%), ${free} bytes free - ${st}"
+
+          # Fail on compile error or overflow.
+          if [ "$rc" -ne 0 ]; then
+            cat build.log
+            echo "::error::Firmware does not compile or exceeds ${MAX} bytes"
+            exit "$rc"
+          fi
+
+          # Copy artifacts for upload step.
+          cp out/firmware.ino.hex firmware.hex
+          cp out/firmware.ino.bin firmware.bin
+
+      - name: Upload compiled firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: badge-firmware
+          path: |
+            firmware.hex
+            firmware.bin
+          if-no-files-found: error
