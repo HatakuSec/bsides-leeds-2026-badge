@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Artie Alive — Firmware Emulator v5</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 12px; min-height: 100vh; font-size: 13px; }
+h1 { text-align: center; margin-bottom: 2px; color: #00d4ff; font-size: 1.4em; }
+.subtitle { text-align: center; font-size: 0.75em; color: #888; margin-bottom: 12px; }
+.container { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: 1fr 330px; gap: 12px; }
+@media (max-width: 1000px) { .container { grid-template-columns: 1fr; } }
+.panel { background: #16213e; border-radius: 8px; padding: 12px; border: 1px solid #0f3460; margin-bottom: 10px; }
+.panel h2 { font-size: 0.95em; margin-bottom: 6px; color: #00d4ff; }
+.panel h3 { font-size: 0.8em; margin: 8px 0 4px; color: #aaa; }
+.eyes-container { display: flex; justify-content: center; gap: 44px; padding: 12px 0; }
+.eye { position: relative; width: 150px; height: 150px; }
+.eye-label { text-align: center; font-size: 0.7em; color: #888; margin-top: 2px; }
+.led { position: absolute; width: 24px; height: 24px; border-radius: 50%; border: 2px solid #333; display: flex; align-items: center; justify-content: center; font-size: 7px; color: #555; transition: background-color 0.04s, box-shadow 0.04s; }
+.led.active { box-shadow: 0 0 8px 2px currentColor; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+.btn { padding: 4px 8px; border: 1px solid #0f3460; border-radius: 5px; background: #1a1a2e; color: #e0e0e0; cursor: pointer; font-size: 0.7em; }
+.btn:hover { background: #0f3460; }
+.btn.active { background: #00d4ff; color: #000; border-color: #00d4ff; }
+.btn.sleep { border-color: #9b59b6; color: #bb88dd; }
+.btn.sleep:hover { background: #9b59b6; color: #fff; }
+.btn.wake { border-color: #27ae60; color: #6fdb9a; }
+.btn.wake:hover { background: #27ae60; color: #fff; }
+.btn.danger { border-color: #e74c3c; color: #e74c3c; }
+.btn.danger:hover { background: #e74c3c; color: #fff; }
+.btn.exp { border-color: #f39c12; color: #f5d76e; font-size: 0.65em; }
+.btn.exp:hover { background: #f39c12; color: #000; }
+.state-panel { font-family: monospace; font-size: 0.7em; line-height: 1.6; }
+.state-panel .row { display: flex; justify-content: space-between; border-bottom: 1px solid #0f3460; padding: 1px 0; }
+.state-panel .label { color: #888; }
+.state-panel .val { color: #00d4ff; text-align: right; max-width: 180px; overflow: hidden; }
+.state-panel .val.sleeping { color: #e74c3c; }
+select { background: #1a1a2e; color: #e0e0e0; border: 1px solid #0f3460; border-radius: 4px; padding: 3px 6px; font-size: 0.7em; }
+input[type=checkbox] { margin-right: 3px; vertical-align: middle; }
+.mode-indicator { text-align: center; font-size: 0.8em; padding: 5px; background: #0d1b2a; border-radius: 6px; margin-bottom: 8px; }
+.mode-indicator strong { color: #00d4ff; }
+.controls-row { display: flex; align-items: center; gap: 6px; margin: 4px 0; flex-wrap: wrap; }
+.controls-row label { font-size: 0.7em; }
+.stats-table { font-family: monospace; font-size: 0.65em; width: 100%; border-collapse: collapse; margin-top: 4px; }
+.stats-table th, .stats-table td { padding: 2px 4px; border-bottom: 1px solid #0f3460; text-align: left; }
+.stats-table th { color: #888; }
+.stats-table td { color: #aaa; }
+.stats-table td:nth-child(2), .stats-table td:nth-child(3) { text-align: right; color: #00d4ff; }
+.desc-box { font-size: 0.7em; color: #aaa; padding: 6px; background: #0d1b2a; border-radius: 4px; min-height: 24px; margin-top: 6px; }
+.toggle-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 0.7em; flex-wrap: wrap; }
+.note { font-size: 0.65em; color: #666; margin-top: 4px; line-height: 1.4; }
+</style>
+</head>
+<body>
+
+<h1>Artie Alive — Firmware Emulator v5</h1>
+<p class="subtitle">BSides Leeds 2026 badge (18× SK6812). Firmware-exact emulation. Flash: 6945/8192.</p>
+
+<div class="container">
+<div>
+  <div class="panel">
+    <div class="mode-indicator">Mode: <strong id="mode-label">0 — Artie Alive</strong></div>
+    <div class="eyes-container">
+      <div><div class="eye" id="left-eye"></div><div class="eye-label">Left Eye (0–8)</div></div>
+      <div><div class="eye" id="right-eye"></div><div class="eye-label">Right Eye (9–17)</div></div>
+    </div>
+    <div class="desc-box" id="emote-desc"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Controls</h2>
+    <div class="btn-row">
+      <button class="btn" onclick="nextMode()">Next Mode</button>
+      <button class="btn sleep" onclick="triggerSleep()">Sleep</button>
+      <button class="btn wake" onclick="triggerWake()">Wake / Reboot</button>
+      <button class="btn danger" onclick="resetArtie()">Reset</button>
+      <button class="btn" onclick="demoMode()">Demo All</button>
+    </div>
+    <div class="controls-row">
+      <label><input type="checkbox" id="pause-check" onchange="togglePause()">Pause</label>
+      <button class="btn" onclick="stepOne()">+1</button>
+      <button class="btn" onclick="stepTen()">+10</button>
+      <label>Speed:</label>
+      <input type="range" id="speed-slider" min="20" max="300" value="80" style="width:70px;" oninput="updateSpeed()">
+      <span id="speed-val">80ms</span>
+    </div>
+    <div class="controls-row">
+      <label>Idle profile:</label>
+      <select id="idle-profile">
+        <option value="firmware">Firmware (exact match)</option>
+        <option value="proposed">Proposed calm-gap scheduler</option>
+        <option value="rarity">Rarity boost (testing)</option>
+      </select>
+    </div>
+    <p class="note">Firmware = calm-gap scheduler (matches firmware). Proposed = same model, testing. 80ms/frame matches firmware.</p>
+
+    <h3>Force Firmware Emote</h3>
+    <div class="btn-row">
+      <button class="btn" onclick="forceEmote('calm')">Calm</button>
+      <button class="btn" onclick="forceEmote('blink')">Blink</button>
+      <button class="btn" onclick="forceEmote('dblblink')">Dbl Blink</button>
+      <button class="btn" onclick="forceEmote('look_n')">Look</button>
+      <button class="btn" onclick="forceEmote('look_fp')">Look FP</button>
+      <button class="btn" onclick="forceEmote('look_alert')">Look Alert</button>
+      <button class="btn" onclick="forceEmote('scan')">Scan</button>
+      <button class="btn" onclick="forceEmote('happy')">Happy</button>
+      <button class="btn" onclick="forceEmote('sleepy')">Sleepy</button>
+      <button class="btn" onclick="forceEmote('wink')">Wink</button>
+      <button class="btn" onclick="forceEmote('thinking')">Thinking</button>
+      <button class="btn" onclick="forceEmote('suspicious')">Suspicious</button>
+      <button class="btn" onclick="forceEmote('alert')">Alert</button>
+      <button class="btn" onclick="forceEmote('startled')">Startled</button>
+    </div>
+
+    <h3>Experimental (JS only, not in firmware)</h3>
+    <div class="btn-row">
+      <button class="btn exp" onclick="forceExperimental('excited')">Excited</button>
+      <button class="btn exp" onclick="forceExperimental('bored')">Bored</button>
+    </div>
+
+    <h3>Touch Reactions (Proposed)</h3>
+    <p class="note">Simulates touch-only pads in Artie mode. Enters forced looping reaction. Physical button exits.</p>
+    <div class="btn-row">
+      <button class="btn" style="border-color:#4488ff;color:#4488ff" onclick="touchReaction('left_blue')">L Blue → Sleepy</button>
+      <button class="btn" style="border-color:#4488ff;color:#4488ff" onclick="touchReaction('right_blue')">R Blue → Wink</button>
+      <button class="btn" style="border-color:#ff4444;color:#ff4444" onclick="touchReaction('left_red')">L Red → Alert</button>
+      <button class="btn" style="border-color:#ff4444;color:#ff4444" onclick="touchReaction('right_red')">R Red → Suspicious</button>
+      <button class="btn" style="border-color:#44cc44;color:#44cc44" onclick="touchReaction('left_green')">L Green → Excited</button>
+      <button class="btn" style="border-color:#44cc44;color:#44cc44" onclick="touchReaction('right_green')">R Green → Happy</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn wake" onclick="physicalButton()">Physical Button (exit forced / cycle mode)</button>
+      <button class="btn" style="border-color:#ff8800;color:#ff8800" onclick="startDemo()">Demo All Emotes</button>
+    </div>
+    <div class="note" id="touch-info">No forced reaction active. Physical button cycles mode.</div>
+
+    <h3>Lifecycle</h3>
+    <div class="toggle-row">
+      <label><input type="checkbox" id="proposed-wake" checked>Polished wake-up (proposed)</label>
+      <label><input type="checkbox" id="proposed-sleep" checked>Polished sleep (proposed)</label>
+    </div>
+    <p class="note">Unchecked = current firmware-exact. Checked = proposed polished version with longer blue pulsing.</p>
+  </div>
+</div>
+
+<!-- Right column -->
+<div>
+  <div class="panel">
+    <h2>State</h2>
+    <div class="state-panel" id="state-panel"></div>
+  </div>
+  <div class="panel">
+    <h2>Emote Stats</h2>
+    <table class="stats-table" id="stats-table">
+      <tr><th>Emote</th><th>Count</th><th>Frames</th><th>~Time</th></tr>
+    </table>
+    <button class="btn" style="margin-top:4px;" onclick="resetCounts()">Reset</button>
+    <p class="note">Count = times selected. Frames = total frames spent. Time skew: short emotes (blink/dblblink/startled) have high count but low time.</p>
+  </div>
+</div>
+</div>
+
+<script>
+// =============================================================
+// FIRMWARE EMULATOR v5 — exact match to firmware.ino (7175 bytes)
+// =============================================================
+const NUM_LEDS = 18, LEDS_PER_EYE = 9;
+const ARTIE_WAKEUP = 0, ARTIE_IDLE = 1;
+
+// Emote enum — matches firmware exactly
+const EMOTE_CALM = 0, EMOTE_BLINK = 1, EMOTE_LOOK = 2, EMOTE_SCAN = 3;
+const EMOTE_HAPPY = 4, EMOTE_WINK = 5, EMOTE_SLEEPY = 6;
+const EMOTE_DBLBLINK = 7, EMOTE_THINKING = 8, EMOTE_SUSPICIOUS = 9, EMOTE_STARTLED = 10;
+// Proposed forced-only emotes (not in firmware idle chooser)
+const EMOTE_ALERT = 11, EMOTE_EXCITED = 12;
+
+const EMOTE_NAMES = {
+  0:'CALM', 1:'BLINK', 2:'LOOK', 3:'SCAN', 4:'HAPPY', 5:'WINK', 6:'SLEEPY',
+  7:'DBLBLINK', 8:'THINKING', 9:'SUSPICIOUS', 10:'STARTLED',
+  11:'ALERT', 12:'EXCITED'
+};
+const LIFECYCLE_NAMES = ['WAKEUP','IDLE'];
+const MODE_NAMES = ['Artie Alive', 'Breath Red', 'LoopingEyes Blue'];
+
+// Colours — exact firmware values
+const ARTIE_CALM_COL  = { r: 0, g: 18, b: 16 };
+const ARTIE_SCAN_COL  = { r: 28, g: 13, b: 0 };
+const ARTIE_SLEEP_COL = { r: 0, g: 0, b: 30 };
+const ARTIE_HAPPY_COL = { r: 0, g: 24, b: 4 };
+const ARTIE_WINK_COL  = { r: 28, g: 13, b: 21 };
+const COLOR_RED       = { r: 30, g: 0, b: 0 };
+const COLOR_OFF       = { r: 0, g: 0, b: 0 };
+
+// Masks — exact firmware values
+const MASK_LOWER  = 0x078;  // bits 3,4,5,6
+const MASK_TOP    = 0x187;  // bits 0,1,2,7,8
+const MASK_LOOK_L = 0x1E0;  // bits 5,6,7,8
+const MASK_LOOK_R = 0x01E;  // bits 1,2,3,4
+const MASK_FULL   = 0x1FF;  // bits 0-8
+
+// LFSR — exact firmware implementation
+let randomState = 0xACE1;
+function nextRandomByte() {
+  const bit = randomState & 1;
+  randomState >>>= 1;
+  if (bit) randomState ^= 0xB400;
+  randomState &= 0xFFFF;
+  return randomState & 0xFF;
+}
+function seedRandom(v) { randomState = v || 0xACE1; if (!randomState) randomState = 0xACE1; }
+
+// LED state
+let leds = Array.from({ length: NUM_LEDS }, () => ({ r: 0, g: 0, b: 0 }));
+function setAllLeds(col) { for (let i = 0; i < NUM_LEDS; i++) leds[i] = { ...col }; }
+function setPixelColor(idx, r, g, b) { if (idx >= 0 && idx < NUM_LEDS) leds[idx] = { r, g, b }; }
+function applyMaskBoth(mask, r, g, b) { for (let i = 0; i < 9; i++) { if (mask & (1 << i)) { setPixelColor(i, r, g, b); setPixelColor(i + 9, r, g, b); } } }
+
+// ArtieState — exact firmware struct
+let artie = { lifecycle: ARTIE_WAKEUP, emote: EMOTE_CALM, subStep: 0, duration: 0, arg: 0 };
+
+// Device state
+let animationMode = 0, animationStep = 0, sleeping = false, closeEyesFrame = -1;
+let experimentalEmote = null, demoQueue = null;
+
+// Forced touch reaction state (proposed)
+let artieForced = 0; // 0=none, 1=sleepy, 2=wink, 3=alert, 4=suspicious, 5=excited, 6=happy, 7=demo
+let forcedPadName = '';
+const FORCED_NAMES = { 0:'none', 1:'SLEEPY', 2:'WINK', 3:'ALERT', 4:'SUSPICIOUS', 5:'EXCITED', 6:'HAPPY', 7:'DEMO' };
+const FORCED_PAD = { 0:'—', 1:'L Blue', 2:'R Blue', 3:'L Red', 4:'R Red', 5:'L Green', 6:'R Green', 7:'All R' };
+
+// Demo sequence: [emote, duration, arg]
+const DEMO_SEQ = [
+  [EMOTE_CALM, 35, 0],
+  [EMOTE_BLINK, 6, 0],
+  [EMOTE_DBLBLINK, 10, 0],
+  [EMOTE_LOOK, 45, 0],
+  [EMOTE_LOOK, 45, 3],
+  [EMOTE_LOOK, 45, 5],
+  [EMOTE_SCAN, 60, 4],
+  [EMOTE_HAPPY, 45, 0],
+  [EMOTE_SLEEPY, 55, 0],
+  [EMOTE_WINK, 24, 1],
+  [EMOTE_THINKING, 50, 0],
+  [EMOTE_SUSPICIOUS, 40, 0],
+  [EMOTE_ALERT, 55, 0],
+  [EMOTE_EXCITED, 50, 0],
+  [EMOTE_STARTLED, 28, 0],
+];
+let demoStep = 0;
+
+// Calm-gap scheduler state
+let inCalmGap = false;
+let calmGapFrames = 0; // frames remaining in current calm gap
+let calmGapTotalFrames = 0; // total frames spent in calm gaps
+
+// Stats
+let emoteStats = {};
+let currentEmoteName = '';
+let lastChosenR = 0;
+
+function getProfile() { return document.getElementById('idle-profile').value; }
+function useProposedWake() { return document.getElementById('proposed-wake').checked; }
+function useProposedSleep() { return document.getElementById('proposed-sleep').checked; }
+
+let frameInterval = 80, paused = false, timer = null;
+
+// =============================================================
+// IDLE CHOOSER — firmware-exact for 'firmware' profile
+// =============================================================
+// Firmware uses calm-gap scheduler: CALM is NOT randomly selected.
+// After every expressive emote, a CALM gap (25-72 frames) plays automatically.
+// The chooser only selects expressive emotes:
+//   r < 40:  BLINK       (15.6%)  dur: 3 + (r & 0x03)  = 3-6
+//   r < 59:  DBLBLINK    ( 7.4%)  dur: 10 (fixed)
+//   r < 108: LOOK        (19.1%)  dur: 55 + (r & 0x3F) = 55-118
+//   r < 148: SCAN        (15.6%)  dur: 60 + (r & 0x3F) = 60-123
+//   r < 174: HAPPY       (10.2%)  dur: 38 + (r & 0x3F) = 38-101
+//   r < 188: SLEEPY      ( 5.5%)  dur: 55 + (r & 0x3F) = 55-118
+//   r < 208: WINK        ( 7.8%)  dur: 24 (fixed)
+//   r < 228: THINKING    ( 7.8%)  dur: 40 + (r & 0x3F) = 40-103
+//   r < 244: SUSPICIOUS  ( 6.3%)  dur: 30 + (r & 0x1F) = 30-61
+//   r < 250: ALERT       ( 2.3%)  dur: 50 + (r & 0x1F) = 50-81
+//   else:    STARTLED    ( 2.3%)  dur: 28 (fixed)
+
+function chooseNextEmote() {
+  const profile = getProfile();
+  let r = nextRandomByte();
+  lastChosenR = r;
+
+  if (profile === 'firmware') {
+    // Firmware-exact: calm-gap scheduler, no CALM in chooser
+    if (r < 40) {
+      artie.emote = EMOTE_BLINK;
+      artie.duration = 3 + (nextRandomByte() & 0x03);
+    } else if (r < 59) {
+      artie.emote = EMOTE_DBLBLINK;
+      artie.duration = 10;
+    } else if (r < 108) {
+      artie.emote = EMOTE_LOOK;
+      artie.duration = 55 + (nextRandomByte() & 0x3F);
+      const dir = nextRandomByte() & 0x01;
+      const r2 = nextRandomByte();
+      const mood = r2 < 180 ? 0 : (r2 < 240 ? 1 : 2);
+      artie.arg = dir | (mood << 1);
+    } else if (r < 148) {
+      artie.emote = EMOTE_SCAN;
+      artie.duration = 60 + (nextRandomByte() & 0x3F);
+      artie.arg = nextRandomByte() % 9;
+    } else if (r < 174) {
+      artie.emote = EMOTE_HAPPY;
+      artie.duration = 38 + (nextRandomByte() & 0x3F);
+    } else if (r < 188) {
+      artie.emote = EMOTE_SLEEPY;
+      artie.duration = 55 + (nextRandomByte() & 0x3F);
+    } else if (r < 208) {
+      artie.emote = EMOTE_WINK;
+      artie.duration = 24;
+      artie.arg = nextRandomByte() & 0x01;
+    } else if (r < 228) {
+      artie.emote = EMOTE_THINKING;
+      artie.duration = 40 + (nextRandomByte() & 0x3F);
+    } else if (r < 244) {
+      artie.emote = EMOTE_SUSPICIOUS;
+      artie.duration = 30 + (nextRandomByte() & 0x1F);
+    } else if (r < 250) {
+      artie.emote = EMOTE_ALERT;
+      artie.duration = 50 + (nextRandomByte() & 0x1F);
+    } else {
+      artie.emote = EMOTE_STARTLED;
+      artie.duration = 28;
+    }
+  } else {
+    // Proposed / Rarity: no CALM in chooser (calm-gap handles it)
+    // Rarity uses same chooser but calm-gap may be off
+    if (r < 40) {
+      artie.emote = EMOTE_BLINK;
+      artie.duration = 3 + (nextRandomByte() & 0x03);
+    } else if (r < 60) {
+      artie.emote = EMOTE_DBLBLINK;
+      artie.duration = 10;
+    } else if (r < 100) {
+      artie.emote = EMOTE_LOOK;
+      artie.duration = 55 + (nextRandomByte() & 0x3F);
+      const dir = nextRandomByte() & 0x01;
+      const r2 = nextRandomByte();
+      const mood = r2 < 180 ? 0 : (r2 < 240 ? 1 : 2);
+      artie.arg = dir | (mood << 1);
+    } else if (r < 130) {
+      artie.emote = EMOTE_SCAN;
+      artie.duration = 60 + (nextRandomByte() & 0x3F);
+      artie.arg = nextRandomByte() % 9;
+    } else if (r < 155) {
+      artie.emote = EMOTE_HAPPY;
+      artie.duration = 38 + (nextRandomByte() & 0x3F);
+    } else if (r < 175) {
+      artie.emote = EMOTE_SLEEPY;
+      artie.duration = 55 + (nextRandomByte() & 0x3F);
+    } else if (r < 195) {
+      artie.emote = EMOTE_WINK;
+      artie.duration = 24;
+      artie.arg = nextRandomByte() & 0x01;
+    } else if (r < 220) {
+      artie.emote = EMOTE_THINKING;
+      artie.duration = 40 + (nextRandomByte() & 0x3F);
+    } else if (r < 238) {
+      artie.emote = EMOTE_SUSPICIOUS;
+      artie.duration = 30 + (nextRandomByte() & 0x1F);
+    } else if (r < 248) {
+      artie.emote = EMOTE_ALERT;
+      artie.duration = 50 + (nextRandomByte() & 0x1F);
+    } else {
+      artie.emote = EMOTE_STARTLED;
+      artie.duration = 28;
+    }
+  }
+
+  artie.subStep = 0;
+  currentEmoteName = EMOTE_NAMES[artie.emote] || '?';
+  if (!emoteStats[currentEmoteName]) emoteStats[currentEmoteName] = { count: 0, frames: 0 };
+  emoteStats[currentEmoteName].count++;
+}
+
+// =============================================================
+// WAKE-UP
+// =============================================================
+function firmwareWakeUp(step) {
+  setAllLeds(COLOR_OFF);
+  let mask = 0, col = COLOR_OFF;
+  if (step >= 15 && step < 25) { mask = MASK_LOWER; col = ARTIE_SLEEP_COL; }
+  else if (step >= 29 && step < 45) { mask = MASK_FULL; col = ARTIE_CALM_COL; }
+  else if (step >= 49 && step < 57) { mask = MASK_LOOK_L; col = ARTIE_CALM_COL; }
+  else if (step >= 57 && step < 65) { mask = MASK_LOOK_R; col = ARTIE_CALM_COL; }
+  else if (step >= 65) { mask = MASK_FULL; col = ARTIE_CALM_COL; }
+  if (mask) applyMaskBoth(mask, col.r, col.g, col.b);
+  if (step >= 70) { artie.lifecycle = ARTIE_IDLE; artie.emote = EMOTE_CALM; artie.subStep = 0; artie.duration = 0; artie.arg = 0; }
+}
+
+// Proposed polished wake-up: 100 frames total (~8s at 80ms)
+// frames 0-7:   all off (dark)
+// frames 8-47:  lower arc blue pulsing dim→bright→dim, 3 full cycles (period=13-14)
+//               brightness = triangle wave: peak at cycle midpoint, 4→30→4
+// frames 48-51: all off (blink)
+// frames 52-67: full teal (awake)
+// frames 68-71: all off (blink)
+// frames 72-79: look left teal
+// frames 80-87: look right teal
+// frames 88-99: full teal (settle)
+// frame 100+:  enter idle
+//
+// Blue pulse brightness (integer only, firmware-portable):
+//   Within 40 frames, 3 cycles → period ~13 frames each.
+//   localFrame = (step - 8) % 13
+//   half = 6
+//   if localFrame <= half: bright = 4 + (localFrame * 26) / half  → 4 to 30
+//   else: bright = 4 + ((12 - localFrame) * 26) / half            → 30 back to 4
+//   Uses only integer multiply and divide by constant 6.
+function proposedWakeUp(step) {
+  setAllLeds(COLOR_OFF);
+  if (step < 8) {
+    // dark
+  } else if (step < 48) {
+    // Lower arc blue pulsing: 3 cycles over 40 frames
+    const local = (step - 8) % 13;
+    let bright;
+    if (local <= 6) {
+      bright = 4 + ((local * 26) / 6) | 0;
+    } else {
+      bright = 4 + (((12 - local) * 26) / 6) | 0;
+    }
+    for (let i = 3; i <= 6; i++) {
+      setPixelColor(i, 0, 0, bright);
+      setPixelColor(i + 9, 0, 0, bright);
+    }
+  } else if (step < 52) {
+    // blink off
+  } else if (step < 68) {
+    // full teal awake
+    setAllLeds(ARTIE_CALM_COL);
+  } else if (step < 72) {
+    // blink off
+  } else if (step < 80) {
+    // look left teal
+    applyMaskBoth(MASK_LOOK_L, ARTIE_CALM_COL.r, ARTIE_CALM_COL.g, ARTIE_CALM_COL.b);
+  } else if (step < 88) {
+    // look right teal
+    applyMaskBoth(MASK_LOOK_R, ARTIE_CALM_COL.r, ARTIE_CALM_COL.g, ARTIE_CALM_COL.b);
+  } else if (step < 100) {
+    // full teal settle
+    setAllLeds(ARTIE_CALM_COL);
+  }
+  if (step >= 100) { artie.lifecycle = ARTIE_IDLE; artie.emote = EMOTE_CALM; artie.subStep = 0; artie.duration = 0; artie.arg = 0; }
+}
+
+// =============================================================
+// CLOSE-EYES / SLEEP
+// =============================================================
+function firmwareCloseEyes(f) {
+  setAllLeds(COLOR_OFF);
+  if (f < 13) {
+    for (let i = 0; i < 9; i++) { setPixelColor(i, 0, 18, 16); setPixelColor(i + 9, 0, 18, 16); }
+  } else if (f >= 17 && f < 30) {
+    for (let i = 3; i <= 6; i++) { setPixelColor(i, 0, 0, 30); setPixelColor(i + 9, 0, 0, 30); }
+  }
+}
+
+// Proposed polished sleep: 70 frames total (~5.6s at 80ms)
+// frames 0-10:  full teal (still awake)
+// frames 11-14: all off (blink)
+// frames 15-50: lower arc blue pulse/dim-down, 36 frames
+//               Starts at brightness 30, pulses once (up to 30, down to ~15),
+//               then trends to 0. Uses a decaying envelope.
+//               envelope = 30 - ((f-15) * 30) / 36  → linear 30→0 over 36 frames
+//               pulse = triangle wave period 18: adds ±8 modulation in first half
+//               final bright = max(0, envelope + pulse_offset)
+//               Simplified integer version:
+//                 base = 30 - ((local * 5) / 6) | 0    (30 → ~0 over 36 frames)
+//                 wave = local % 18; half = 9
+//                 mod = wave <= half ? (wave * 8) / 9 : ((17-wave) * 8) / 9
+//                 bright = min(30, max(0, base - 4 + mod))
+// frames 51-54: all off (blink)
+// frames 55-69: all off (asleep)
+// frame 70+:   sleeping
+function proposedCloseEyes(f) {
+  setAllLeds(COLOR_OFF);
+  if (f < 11) {
+    // full teal still awake
+    setAllLeds(ARTIE_CALM_COL);
+  } else if (f < 15) {
+    // blink off
+  } else if (f < 51) {
+    // lower arc blue: pulse with decaying envelope
+    const local = f - 15; // 0-35
+    const base = (30 - ((local * 5) / 6)) | 0; // 30→0 linearly
+    const wave = local % 18;
+    const half = 9;
+    const mod = wave <= half ? ((wave * 8) / half) | 0 : (((17 - wave) * 8) / half) | 0;
+    const bright = Math.min(30, Math.max(0, base - 4 + mod));
+    for (let i = 3; i <= 6; i++) {
+      setPixelColor(i, 0, 0, bright);
+      setPixelColor(i + 9, 0, 0, bright);
+    }
+  } else if (f < 55) {
+    // blink off
+  }
+  // frames 55-69: already off from setAllLeds(COLOR_OFF)
+}
+
+function getCloseEyesTotal() { return useProposedSleep() ? 70 : 45; }
+function runCloseEyesFrame(f) { if (useProposedSleep()) proposedCloseEyes(f); else firmwareCloseEyes(f); }
+
+// =============================================================
+// ARTIE ALIVE MODE — firmware-exact idle rendering
+// =============================================================
+function artieAliveMode(step) {
+  if (step === 0) { artie.lifecycle = ARTIE_WAKEUP; artie.emote = EMOTE_CALM; artie.subStep = 0; artie.duration = 0; artie.arg = 0; artieForced = 0; demoStep = 0; inCalmGap = false; calmGapFrames = 0; }
+
+  if (experimentalEmote && artie.lifecycle === ARTIE_IDLE) { renderExperimental(); return 80; }
+
+  if (artie.lifecycle === ARTIE_WAKEUP) {
+    if (useProposedWake()) proposedWakeUp(step); else firmwareWakeUp(step);
+  } else {
+    // ARTIE_IDLE
+    if (artieForced !== 0) {
+      // Forced reaction: loop indefinitely, reset subStep on overflow
+      if (artieForced === 7) {
+        // Demo mode: advance through sequence
+        if (artie.subStep >= artie.duration) {
+          if (demoStep >= DEMO_SEQ.length) {
+            artieForced = 0;
+            demoStep = 0;
+            artie.emote = EMOTE_CALM;
+            artie.subStep = 0;
+            artie.duration = 25 + (nextRandomByte() & 0x2F);
+            artie.arg = 0;
+            inCalmGap = true;
+            calmGapFrames = artie.duration;
+            currentEmoteName = 'CALM';
+            updateTouchInfo();
+          } else {
+            artie.emote = DEMO_SEQ[demoStep][0];
+            artie.duration = DEMO_SEQ[demoStep][1];
+            artie.arg = DEMO_SEQ[demoStep][2];
+            artie.subStep = 0;
+            demoStep++;
+            currentEmoteName = EMOTE_NAMES[artie.emote] || '?';
+            if (!emoteStats[currentEmoteName]) emoteStats[currentEmoteName] = { count: 0, frames: 0 };
+            emoteStats[currentEmoteName].count++;
+          }
+        }
+      } else {
+        if (artie.subStep >= 240) artie.subStep = 0;
+      }
+      renderIdleEmote();
+      artie.subStep++;
+      if (currentEmoteName && emoteStats[currentEmoteName]) emoteStats[currentEmoteName].frames++;
+    } else if (getProfile() === 'proposed' || getProfile() === 'firmware') {
+      // Calm-gap scheduler (firmware uses this model)
+      if (inCalmGap) {
+        setAllLeds(ARTIE_CALM_COL);
+        calmGapFrames--;
+        calmGapTotalFrames++;
+        if (calmGapFrames <= 0) { inCalmGap = false; artie.duration = 0; }
+      } else {
+        if (artie.duration === 0) chooseNextEmote();
+        renderIdleEmote();
+        artie.subStep++;
+        if (currentEmoteName && emoteStats[currentEmoteName]) emoteStats[currentEmoteName].frames++;
+        if (artie.subStep >= artie.duration) {
+          artie.duration = 0;
+          // Enter calm gap after emote finishes
+          inCalmGap = true;
+          calmGapFrames = 25 + (nextRandomByte() & 0x2F); // 25-72 frames (2-5.8s)
+        }
+      }
+    } else {
+      // Rarity: standard chooser, no calm-gap
+      if (artie.duration === 0) chooseNextEmote();
+      renderIdleEmote();
+      artie.subStep++;
+      if (currentEmoteName && emoteStats[currentEmoteName]) emoteStats[currentEmoteName].frames++;
+      if (artie.subStep >= artie.duration) artie.duration = 0;
+    }
+  }
+  return 80;
+}
+
+// =============================================================
+// IDLE EMOTE RENDERING — firmware-exact
+// =============================================================
+function renderIdleEmote() {
+  setAllLeds(COLOR_OFF);
+  let mask = 0, cr = 0, cg = 0, cb = 0;
+
+  if (artie.emote === EMOTE_CALM) {
+    setAllLeds(ARTIE_CALM_COL);
+    return;
+  }
+
+  if (artie.emote === EMOTE_DBLBLINK) {
+    // off[0-1], calm[2-3], off[4-5], calm[6-9]
+    if ((artie.subStep >= 2 && artie.subStep < 4) || artie.subStep >= 6) {
+      setAllLeds(ARTIE_CALM_COL);
+    }
+    return;
+  }
+
+  if (artie.emote === EMOTE_STARTLED) {
+    // Progressive startled: 28 frames total
+    // amber[0-5], red[6-15], off[16-20], calm[21-27]
+    if (artie.subStep < 6) setAllLeds(ARTIE_SCAN_COL);
+    else if (artie.subStep < 16) setAllLeds(COLOR_RED);
+    else if (artie.subStep < 21) { /* off */ }
+    else setAllLeds(ARTIE_CALM_COL);
+    return;
+  }
+
+  if (artie.emote === EMOTE_ALERT) {
+    // Full-eye red pulsing glow. Triangle wave over 32 frames.
+    // bright = 8 + triangle(subStep % 32) * 22 / 16
+    // triangle: local <= 16 ? local : 32 - local → range 0..16
+    const local = artie.subStep & 0x1F; // % 32
+    const tri = local <= 16 ? local : 32 - local; // 0..16
+    const bright = 8 + ((tri * 22) >> 4); // 8..29
+    for (let i = 0; i < NUM_LEDS; i++) setPixelColor(i, bright, 0, 0);
+    return;
+  }
+
+  if (artie.emote === EMOTE_EXCITED) {
+    // Green bounce: alternate top arc / full every 5 frames
+    const toggle = ((artie.subStep / 5) | 0) % 2;
+    const mask = toggle === 0 ? MASK_TOP : MASK_FULL;
+    applyMaskBoth(mask, ARTIE_HAPPY_COL.r, ARTIE_HAPPY_COL.g, ARTIE_HAPPY_COL.b);
+    return;
+  }
+
+  if (artie.emote === EMOTE_SCAN) {
+    renderScan();
+    return;
+  }
+
+  if (artie.emote === EMOTE_THINKING) {
+    renderThinking();
+    return;
+  }
+
+  // Mask-based emotes
+  if (artie.emote === EMOTE_LOOK) {
+    mask = (artie.arg & 1) ? MASK_LOOK_R : MASK_LOOK_L;
+    const mood = (artie.arg >> 1) & 0x03;
+    const q = artie.duration >> 2;
+    let lc = ARTIE_CALM_COL;
+    if (mood === 1) {
+      if (artie.subStep >= 2*q && artie.subStep < 3*q) lc = ARTIE_SCAN_COL;
+    } else if (mood === 2) {
+      const h = q >> 1;
+      if (artie.subStep >= q+h && artie.subStep < 2*q) lc = ARTIE_SCAN_COL;
+      else if (artie.subStep >= 3*q && artie.subStep < 3*q+h) lc = COLOR_RED;
+    }
+    cr = lc.r; cg = lc.g; cb = lc.b;
+  } else if (artie.emote === EMOTE_HAPPY) {
+    mask = MASK_TOP;
+    cr = ARTIE_HAPPY_COL.r; cg = ARTIE_HAPPY_COL.g; cb = ARTIE_HAPPY_COL.b;
+  } else if (artie.emote === EMOTE_SLEEPY) {
+    mask = MASK_LOWER;
+    let wave = artie.subStep & 0x1F;
+    if (wave > 16) wave = 32 - wave;
+    cb = 8 + wave;
+  } else if (artie.emote === EMOTE_SUSPICIOUS) {
+    // Alternate MASK_LOOK_L / MASK_LOOK_R every 8 frames
+    mask = ((artie.subStep >> 3) & 1) ? MASK_LOOK_R : MASK_LOOK_L;
+    cr = ARTIE_SCAN_COL.r; cg = ARTIE_SCAN_COL.g; cb = ARTIE_SCAN_COL.b;
+  } else if (artie.emote === EMOTE_WINK) {
+    cr = ARTIE_WINK_COL.r; cg = ARTIE_WINK_COL.g; cb = ARTIE_WINK_COL.b;
+    const winkEye = artie.arg & 1;
+    if (artieForced === 2) {
+      // Forced wink: slower 60-frame cycle
+      const cycle = artie.subStep % 60;
+      if (cycle >= 25 && cycle < 35) {
+        const openOfs = winkEye ? 0 : 9;
+        const shutOfs = winkEye ? 9 : 0;
+        for (let i = 0; i < 9; i++) {
+          setPixelColor(i + openOfs, cr, cg, cb);
+          if (MASK_LOWER & (1 << i)) setPixelColor(i + shutOfs, cr, cg, cb);
+        }
+      } else {
+        for (let i = 0; i < 9; i++) { setPixelColor(i, cr, cg, cb); setPixelColor(i + 9, cr, cg, cb); }
+      }
+    } else {
+      // Idle wink: single 24-frame play (no repeat)
+      // 0-7: both open, 8-15: wink, 16-23: both open
+      if (artie.subStep >= 8 && artie.subStep < 16) {
+        const openOfs = winkEye ? 0 : 9;
+        const shutOfs = winkEye ? 9 : 0;
+        for (let i = 0; i < 9; i++) {
+          setPixelColor(i + openOfs, cr, cg, cb);
+          if (MASK_LOWER & (1 << i)) setPixelColor(i + shutOfs, cr, cg, cb);
+        }
+      } else {
+        for (let i = 0; i < 9; i++) { setPixelColor(i, cr, cg, cb); setPixelColor(i + 9, cr, cg, cb); }
+      }
+    }
+    return;
+  } else if (artie.emote === EMOTE_BLINK) {
+    // All off — already cleared
+    return;
+  }
+
+  if (mask) applyMaskBoth(mask, cr, cg, cb);
+}
+
+// =============================================================
+// SCAN — firmware-exact organic local-sweep
+// =============================================================
+// arg = base gaze (0-8), subStep drives chunk timing
+// 16-frame chunks: [0-3]=base-1, [4-7]=base, [8-11]=base+1, [12-15]=base
+// At chunk boundary (subStep > 0 && (subStep & 0x0F) == 0): new random base
+function renderScan() {
+  const chunkOff = artie.subStep & 0x0F;
+
+  // Chunk boundary: choose new base
+  if (artie.subStep > 0 && chunkOff === 0) {
+    artie.arg = nextRandomByte() % 9;
+  }
+
+  const base = artie.arg;
+  let sweepOff = 0;
+  if (chunkOff < 4) sweepOff = -1;
+  else if (chunkOff >= 8 && chunkOff < 12) sweepOff = 1;
+  // else sweepOff = 0 (frames 4-7 and 12-15)
+
+  const p = (base + 9 + sweepOff) % 9;
+  const a = (p + 8) % 9;
+  const b = (p + 1) % 9;
+
+  setPixelColor(p, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  setPixelColor(a, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  setPixelColor(b, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  setPixelColor(p + 9, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  setPixelColor(a + 9, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  setPixelColor(b + 9, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+}
+
+// =============================================================
+// THINKING — firmware-exact
+// =============================================================
+// phase = (subStep >> 2) % 5
+// phase 0,4 → centre=8 → LEDs [7,8,0]
+// phase 1,3 → centre=0 → LEDs [8,0,1]
+// phase 2   → centre=1 → LEDs [0,1,2]
+function renderThinking() {
+  const phase = (artie.subStep >> 2) % 5;
+  let center;
+  if (phase === 0 || phase === 4) center = 8;
+  else if (phase === 1 || phase === 3) center = 0;
+  else center = 1;
+
+  const ta = (center + 8) % 9;
+  const tb = (center + 1) % 9;
+
+  setPixelColor(center, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  setPixelColor(ta, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  setPixelColor(tb, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  setPixelColor(center + 9, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  setPixelColor(ta + 9, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  setPixelColor(tb + 9, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+}
+
+// =============================================================
+// MODE 1/2 — firmware-exact
+// =============================================================
+function breathMode(step) {
+  let s = step % 60;
+  if (s > 30) s = 60 - s;
+  setAllLeds({ r: s, g: 0, b: 0 });
+  return s === 0 ? 200 : 30;
+}
+
+function loopingEyesMode(step) {
+  setAllLeds(COLOR_OFF);
+  const idx = step % 9;
+  setPixelColor(idx, 0, 0, 10);
+  setPixelColor(17 - idx, 0, 0, 10);
+  return 100;
+}
+
+// =============================================================
+// EXPERIMENTAL EMOTES (JS only — NOT in firmware)
+// =============================================================
+let expState = { name: '', subStep: 0, duration: 0 };
+
+function forceExperimental(name) {
+  if (animationMode !== 0) { animationMode = 0; animationStep = 100; }
+  artie.lifecycle = ARTIE_IDLE; artie.duration = 255; artie.subStep = 0;
+  experimentalEmote = name;
+  const dur = name === 'excited' ? (50 + (nextRandomByte() & 0x1F)) : (120 + (nextRandomByte() & 0x3F));
+  expState = { name, subStep: 0, duration: dur };
+  currentEmoteName = name.toUpperCase() + '*';
+  if (!emoteStats[currentEmoteName]) emoteStats[currentEmoteName] = { count: 0, frames: 0 };
+  emoteStats[currentEmoteName].count++;
+  updateDesc(`Experimental (NOT in firmware): ${name}`);
+}
+
+function renderExperimental() {
+  setAllLeds(COLOR_OFF);
+  const s = expState.subStep;
+  const d = expState.duration;
+
+  if (expState.name === 'excited') {
+    const toggle = Math.floor(s / 5) % 2;
+    const mask = toggle === 0 ? MASK_TOP : MASK_FULL;
+    applyMaskBoth(mask, ARTIE_HAPPY_COL.r, ARTIE_HAPPY_COL.g, ARTIE_HAPPY_COL.b);
+  } else if (expState.name === 'bored') {
+    const q = d >> 2;
+    if (s >= 3*q && s < 3*q + 8) { /* blink off */ }
+    else {
+      const dim = Math.max(4, 12 - Math.floor(s * 6 / d));
+      applyMaskBoth(MASK_LOWER, 0, dim, Math.floor(dim * 0.85));
+    }
+  }
+
+  expState.subStep++;
+  if (currentEmoteName && emoteStats[currentEmoteName]) emoteStats[currentEmoteName].frames++;
+  if (expState.subStep >= expState.duration) { experimentalEmote = null; artie.duration = 0; }
+}
+
+// =============================================================
+// DEMO MODE
+// =============================================================
+function demoMode() {
+  experimentalEmote = null; animationMode = 0; animationStep = 100; artie.lifecycle = ARTIE_IDLE;
+  demoQueue = [
+    { emote: EMOTE_CALM, dur: 25 },
+    { emote: EMOTE_BLINK, dur: 5 },
+    { emote: EMOTE_CALM, dur: 10 },
+    { emote: EMOTE_DBLBLINK, dur: 10 },
+    { emote: EMOTE_CALM, dur: 10 },
+    { emote: EMOTE_LOOK, dur: 80, arg: 0 },
+    { emote: EMOTE_LOOK, dur: 80, arg: 0|(1<<1) },
+    { emote: EMOTE_LOOK, dur: 80, arg: 1|(2<<1) },
+    { emote: EMOTE_SCAN, dur: 70, arg: nextRandomByte() % 9 },
+    { emote: EMOTE_HAPPY, dur: 50 },
+    { emote: EMOTE_SLEEPY, dur: 60 },
+    { emote: EMOTE_WINK, dur: 50, arg: 0 },
+    { emote: EMOTE_WINK, dur: 50, arg: 1 },
+    { emote: EMOTE_THINKING, dur: 60 },
+    { emote: EMOTE_SUSPICIOUS, dur: 45 },
+    { emote: EMOTE_STARTLED, dur: 14 },
+    { emote: EMOTE_CALM, dur: 25 },
+  ];
+  advanceDemo(); updateDesc('Demo mode: cycling through all firmware emotes');
+}
+
+function advanceDemo() {
+  if (!demoQueue || !demoQueue.length) { demoQueue = null; artie.duration = 0; updateDesc('Demo complete'); return; }
+  const next = demoQueue.shift();
+  artie.emote = next.emote;
+  artie.duration = next.dur;
+  artie.arg = next.arg != null ? next.arg : 0;
+  artie.subStep = 0;
+  currentEmoteName = EMOTE_NAMES[artie.emote] || '?';
+  if (!emoteStats[currentEmoteName]) emoteStats[currentEmoteName] = { count: 0, frames: 0 };
+  emoteStats[currentEmoteName].count++;
+}
+
+function runDemoTick() {
+  renderIdleEmote();
+  artie.subStep++;
+  if (currentEmoteName && emoteStats[currentEmoteName]) emoteStats[currentEmoteName].frames++;
+  if (artie.subStep >= artie.duration) { artie.duration = 0; advanceDemo(); }
+}
+
+// =============================================================
+// MAIN TICK
+// =============================================================
+function tick() {
+  if (sleeping) return;
+  if (closeEyesFrame >= 0) {
+    if (closeEyesFrame < getCloseEyesTotal()) { runCloseEyesFrame(closeEyesFrame); closeEyesFrame++; }
+    else { closeEyesFrame = -1; sleeping = true; setAllLeds(COLOR_OFF); }
+    renderLeds(); updateState(); return;
+  }
+  if (demoQueue) { runDemoTick(); renderLeds(); updateState(); return; }
+  const interval = runAnimationMode(animationMode, animationStep);
+  if (interval === 0) animationMode++;
+  if (interval < 0) { animationMode = 0; animationStep = 0; renderLeds(); updateState(); return; }
+  animationStep++; renderLeds(); updateState();
+}
+
+function runAnimationMode(mode, step) {
+  switch (mode) {
+    case 0: return artieAliveMode(step);
+    case 1: return breathMode(step);
+    case 2: return loopingEyesMode(step);
+    default: return -1;
+  }
+}
+
+// =============================================================
+// UI ACTIONS
+// =============================================================
+function startDemo() {
+  if (animationMode !== 0) { updateTouchInfo('Demo only works in Artie mode (mode 0)'); return; }
+  if (artie.lifecycle !== ARTIE_IDLE) { updateTouchInfo('Wait for wake-up to complete'); return; }
+  experimentalEmote = null; demoQueue = null;
+  artieForced = 7;
+  demoStep = 0;
+  artie.duration = 0;
+  artie.subStep = 0;
+  inCalmGap = false;
+  updateTouchInfo();
+  updateState();
+}
+function nextMode() { experimentalEmote = null; demoQueue = null; artieForced = 0; demoStep = 0; animationMode++; if (animationMode > 2) animationMode = 0; animationStep = 0; updateTouchInfo(); updateState(); }
+function triggerSleep() { if (sleeping) return; experimentalEmote = null; demoQueue = null; artieForced = 0; if (animationMode === 0) closeEyesFrame = 0; else { sleeping = true; setAllLeds(COLOR_OFF); renderLeds(); updateState(); } }
+function triggerWake() { sleeping = false; closeEyesFrame = -1; experimentalEmote = null; demoQueue = null; artieForced = 0; demoStep = 0; animationMode = 0; animationStep = 0; seedRandom(0xACE1); artie = { lifecycle: ARTIE_WAKEUP, emote: EMOTE_CALM, subStep: 0, duration: 0, arg: 0 }; setAllLeds(COLOR_OFF); renderLeds(); updateTouchInfo(); updateState(); }
+function resetArtie() { experimentalEmote = null; demoQueue = null; artieForced = 0; demoStep = 0; animationMode = 0; animationStep = 0; sleeping = false; closeEyesFrame = -1; inCalmGap = false; calmGapFrames = 0; calmGapTotalFrames = 0; artie = { lifecycle: ARTIE_WAKEUP, emote: EMOTE_CALM, subStep: 0, duration: 0, arg: 0 }; setAllLeds(COLOR_OFF); renderLeds(); updateTouchInfo(); updateState(); }
+
+// =============================================================
+// TOUCH REACTIONS (proposed — not yet in firmware)
+// =============================================================
+function touchReaction(pad) {
+  // Only works in Artie mode, idle
+  if (animationMode !== 0) { updateTouchInfo('Touch reactions only work in Artie mode (mode 0)'); return; }
+  if (artie.lifecycle !== ARTIE_IDLE) { updateTouchInfo('Wait for wake-up to complete'); return; }
+  if (artieForced === 7) { updateTouchInfo('Demo is playing. Press Physical Button to cancel.'); return; }
+  experimentalEmote = null; demoQueue = null;
+
+  let emote, arg = 0, forcedId = 0;
+  switch (pad) {
+    case 'left_blue':   emote = EMOTE_SLEEPY; forcedId = 1; break;
+    case 'right_blue':  emote = EMOTE_WINK; arg = nextRandomByte() & 1; forcedId = 2; break;
+    case 'left_red':    emote = EMOTE_ALERT; forcedId = 3; break;
+    case 'right_red':   emote = EMOTE_SUSPICIOUS; forcedId = 4; break;
+    case 'left_green':  emote = EMOTE_EXCITED; forcedId = 5; break;
+    case 'right_green': emote = EMOTE_HAPPY; forcedId = 6; break;
+    default: return;
+  }
+
+  artieForced = forcedId;
+  artie.emote = emote;
+  artie.arg = arg;
+  artie.subStep = 0;
+  artie.duration = 255;
+  currentEmoteName = EMOTE_NAMES[emote] || '?';
+  if (!emoteStats[currentEmoteName]) emoteStats[currentEmoteName] = { count: 0, frames: 0 };
+  emoteStats[currentEmoteName].count++;
+  forcedPadName = pad;
+  updateTouchInfo(`FORCED: ${FORCED_NAMES[forcedId]} (${FORCED_PAD[forcedId]}). Press Physical Button to exit.`);
+  updateState();
+}
+
+function physicalButton() {
+  // Simulates short-press of physical button
+  if (sleeping) { triggerWake(); return; }
+  if (artieForced !== 0) {
+    // Exit forced reaction / demo, return to idle, do NOT cycle mode
+    artieForced = 0;
+    demoStep = 0;
+    artie.duration = 0;
+    artie.subStep = 0;
+    forcedPadName = '';
+    updateTouchInfo('Forced reaction exited. Returning to normal idle.');
+    updateDesc('Forced reaction cleared by physical button');
+    updateState();
+    return;
+  }
+  // Not forced: cycle mode
+  nextMode();
+}
+
+function updateTouchInfo(msg) {
+  const el = document.getElementById('touch-info');
+  if (msg) { el.textContent = msg; return; }
+  if (artieForced === 7) {
+    el.textContent = `DEMO playing (step ${demoStep}/${DEMO_SEQ.length}). Press Physical Button to cancel.`;
+  } else if (artieForced !== 0) {
+    el.textContent = `FORCED: ${FORCED_NAMES[artieForced]} (${FORCED_PAD[artieForced]}). Press Physical Button to exit.`;
+  } else {
+    el.textContent = 'No forced reaction active. Physical button cycles mode.';
+  }
+}
+
+function forceEmote(name) {
+  experimentalEmote = null; demoQueue = null;
+  if (animationMode !== 0) { animationMode = 0; animationStep = 100; }
+  artie.lifecycle = ARTIE_IDLE; artie.subStep = 0;
+  switch (name) {
+    case 'calm': artie.emote = EMOTE_CALM; artie.duration = 90; artie.arg = 0; break;
+    case 'blink': artie.emote = EMOTE_BLINK; artie.duration = 5; artie.arg = 0; break;
+    case 'dblblink': artie.emote = EMOTE_DBLBLINK; artie.duration = 10; artie.arg = 0; break;
+    case 'look_n': artie.emote = EMOTE_LOOK; artie.duration = 80; artie.arg = (nextRandomByte() & 1); break;
+    case 'look_fp': artie.emote = EMOTE_LOOK; artie.duration = 80; artie.arg = (nextRandomByte() & 1)|(1<<1); break;
+    case 'look_alert': artie.emote = EMOTE_LOOK; artie.duration = 80; artie.arg = (nextRandomByte() & 1)|(2<<1); break;
+    case 'scan': artie.emote = EMOTE_SCAN; artie.duration = 90; artie.arg = nextRandomByte() % 9; break;
+    case 'happy': artie.emote = EMOTE_HAPPY; artie.duration = 60; artie.arg = 0; break;
+    case 'sleepy': artie.emote = EMOTE_SLEEPY; artie.duration = 80; artie.arg = 0; break;
+    case 'wink': artie.emote = EMOTE_WINK; artie.duration = 55; artie.arg = nextRandomByte() & 1; break;
+    case 'thinking': artie.emote = EMOTE_THINKING; artie.duration = 70; artie.arg = 0; break;
+    case 'suspicious': artie.emote = EMOTE_SUSPICIOUS; artie.duration = 45; artie.arg = 0; break;
+    case 'alert': artie.emote = EMOTE_ALERT; artie.duration = 64; artie.arg = 0; break;
+    case 'startled': artie.emote = EMOTE_STARTLED; artie.duration = 14; artie.arg = 0; break;
+  }
+  currentEmoteName = EMOTE_NAMES[artie.emote] || '?';
+  if (!emoteStats[currentEmoteName]) emoteStats[currentEmoteName] = { count: 0, frames: 0 };
+  emoteStats[currentEmoteName].count++;
+  updateState();
+}
+
+function togglePause() { paused = document.getElementById('pause-check').checked; if (paused && timer) { clearInterval(timer); timer = null; } else if (!paused) startTimer(); }
+function stepOne() { tick(); }
+function stepTen() { for (let i = 0; i < 10; i++) tick(); }
+function updateSpeed() { frameInterval = parseInt(document.getElementById('speed-slider').value); document.getElementById('speed-val').textContent = frameInterval + 'ms'; if (!paused) { if (timer) clearInterval(timer); startTimer(); } }
+function startTimer() { if (timer) clearInterval(timer); timer = setInterval(tick, frameInterval); }
+function resetCounts() { emoteStats = {}; calmGapTotalFrames = 0; updateState(); }
+
+// =============================================================
+// RENDERING
+// =============================================================
+const LED_POSITIONS = [];
+for (let i = 0; i < 9; i++) { const a = (i/9)*2*Math.PI - Math.PI/2; LED_POSITIONS.push({ x: 75+50*Math.cos(a)-12, y: 75+50*Math.sin(a)-12 }); }
+let ledElements = [];
+function createLeds(id, offset) { const c = document.getElementById(id); for (let i = 0; i < 9; i++) { const el = document.createElement('div'); el.className = 'led'; el.style.left = LED_POSITIONS[i].x+'px'; el.style.top = LED_POSITIONS[i].y+'px'; el.textContent = offset+i; c.appendChild(el); ledElements[offset+i] = el; } }
+function renderLeds() {
+  for (let i = 0; i < NUM_LEDS; i++) {
+    const l = leds[i];
+    const r = Math.round((l.r/30)*255), g = Math.round((l.g/30)*255), b = Math.round((l.b/30)*255);
+    const el = ledElements[i];
+    el.style.backgroundColor = `rgb(${r},${g},${b})`;
+    const isOn = l.r > 0 || l.g > 0 || l.b > 0;
+    el.classList.toggle('active', isOn);
+    el.style.boxShadow = isOn ? `0 0 10px 3px rgb(${r},${g},${b})` : 'none';
+  }
+}
+
+// =============================================================
+// STATE PANEL
+// =============================================================
+function updateState() {
+  const ml = animationMode < MODE_NAMES.length ? MODE_NAMES[animationMode] : '?';
+  document.getElementById('mode-label').textContent = `${animationMode} — ${ml}`;
+  const lookDir = (artie.arg & 1) ? 'R' : 'L';
+  const lookMood = ['normal','false-pos','alert'][(artie.arg >> 1) & 0x03] || '?';
+  const emName = experimentalEmote ? experimentalEmote.toUpperCase() + '*' : (EMOTE_NAMES[artie.emote] || '?');
+
+  // Map lastChosenR to firmware threshold label
+  let rLabel;
+  if (lastChosenR < 83) rLabel = 'CALM';
+  else if (lastChosenR < 111) rLabel = 'BLINK';
+  else if (lastChosenR < 124) rLabel = 'DBLBLINK';
+  else if (lastChosenR < 158) rLabel = 'LOOK';
+  else if (lastChosenR < 186) rLabel = 'SCAN';
+  else if (lastChosenR < 204) rLabel = 'HAPPY';
+  else if (lastChosenR < 213) rLabel = 'SLEEPY';
+  else if (lastChosenR < 227) rLabel = 'WINK';
+  else if (lastChosenR < 241) rLabel = 'THINKING';
+  else if (lastChosenR < 250) rLabel = 'SUSPICIOUS';
+  else if (lastChosenR < 253) rLabel = 'ALERT';
+  else rLabel = 'STARTLED';
+
+  const rows = [
+    ['mode', `${animationMode} (${ml})`], ['step', animationStep], ['sleeping', sleeping],
+    ['closeEyes', closeEyesFrame >= 0 ? `${closeEyesFrame}/${getCloseEyesTotal()}` : '—'],
+    ['',''], ['lifecycle', LIFECYCLE_NAMES[artie.lifecycle] || '?'], ['emote', emName],
+    ['subStep', artie.subStep], ['duration', artie.duration],
+    ['arg', `${artie.arg}` + (artie.emote === EMOTE_LOOK ? ` (${lookDir} ${lookMood})` : artie.emote === EMOTE_SCAN ? ` (base:${artie.arg})` : '')],
+    ['',''], ['forced', artieForced ? `${FORCED_NAMES[artieForced]} (${FORCED_PAD[artieForced]})` : 'none'],
+    ['lastR', `${lastChosenR} → ${rLabel}`],
+    ['profile', getProfile()], ['LFSR', '0x'+randomState.toString(16).toUpperCase().padStart(4,'0')],
+    ['interval', frameInterval + 'ms'],
+  ];
+  document.getElementById('state-panel').innerHTML = rows.map(([l,v]) => {
+    if (!l) return '<div style="height:3px;"></div>';
+    const cls = (l === 'sleeping' && v === true) ? ' sleeping' : '';
+    return `<div class="row"><span class="label">${l}</span><span class="val${cls}">${v}</span></div>`;
+  }).join('');
+
+  // Stats table
+  const tbl = document.getElementById('stats-table');
+  const entries = Object.entries(emoteStats).sort((a,b) => b[1].frames - a[1].frames);
+  let html = '<tr><th>Emote</th><th>Sel</th><th>Frames</th><th>~Sec</th></tr>';
+  for (const [name, st] of entries) {
+    html += `<tr><td>${name}</td><td>${st.count}</td><td>${st.frames}</td><td>${(st.frames * 0.08).toFixed(1)}s</td></tr>`;
+  }
+  if (calmGapTotalFrames > 0) {
+    html += `<tr style="color:#6cf"><td>CALM_GAP</td><td>\u2014</td><td>${calmGapTotalFrames}</td><td>${(calmGapTotalFrames * 0.08).toFixed(1)}s</td></tr>`;
+  }
+  tbl.innerHTML = html;
+}
+
+function updateDesc(text) { document.getElementById('emote-desc').textContent = text; }
+
+// =============================================================
+// INIT
+// =============================================================
+createLeds('left-eye', 0); createLeds('right-eye', 9);
+renderLeds(); updateState(); startTimer();
+</script>
+</body>
+</html>
