@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Artie Alive — LED Preview & Creature Lifecycle</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 20px; min-height: 100vh; }
+h1 { text-align: center; margin-bottom: 4px; color: #00d4ff; font-size: 1.6em; }
+.subtitle { text-align: center; font-size: 0.85em; color: #888; margin-bottom: 20px; }
+.container { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 900px) { .container { grid-template-columns: 1fr; } }
+.panel { background: #16213e; border-radius: 10px; padding: 16px; border: 1px solid #0f3460; }
+.panel h2 { font-size: 1.1em; margin-bottom: 10px; color: #00d4ff; }
+.panel h3 { font-size: 0.95em; margin: 10px 0 6px; color: #aaa; }
+
+/* Eye display */
+.eyes-container { display: flex; justify-content: center; gap: 60px; padding: 20px 0; }
+.eye { position: relative; width: 180px; height: 180px; }
+.eye-label { text-align: center; font-size: 0.8em; color: #888; margin-top: 4px; }
+.led {
+  position: absolute; width: 28px; height: 28px; border-radius: 50%;
+  border: 2px solid #333; cursor: pointer; transition: background-color 0.05s, box-shadow 0.05s;
+  display: flex; align-items: center; justify-content: center; font-size: 9px; color: #555;
+}
+.led:hover { border-color: #00d4ff; }
+.led.active { box-shadow: 0 0 8px 2px currentColor; }
+
+/* Controls */
+.btn-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.btn {
+  padding: 5px 10px; border: 1px solid #0f3460; border-radius: 6px;
+  background: #1a1a2e; color: #e0e0e0; cursor: pointer; font-size: 0.75em;
+  transition: background 0.15s;
+}
+.btn:hover { background: #0f3460; }
+.btn.active { background: #00d4ff; color: #000; border-color: #00d4ff; }
+.btn.stop { border-color: #ff4444; color: #ff4444; }
+.btn.stop:hover { background: #ff4444; color: #fff; }
+.btn.lifecycle { border-color: #9b59b6; color: #bb88dd; }
+.btn.lifecycle:hover { background: #9b59b6; color: #fff; }
+
+/* Colour buttons */
+.colour-btn {
+  width: 28px; height: 28px; border-radius: 50%; border: 2px solid #333;
+  cursor: pointer; display: inline-block;
+}
+.colour-btn:hover { border-color: #fff; }
+.colour-btn.selected { border-color: #00d4ff; box-shadow: 0 0 6px #00d4ff; }
+
+/* Sliders */
+.slider-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.slider-row label { font-size: 0.8em; min-width: 70px; }
+.slider-row input[type=range] { flex: 1; }
+.slider-row .val { font-size: 0.8em; min-width: 30px; }
+
+/* Step display */
+.step-display { font-family: monospace; font-size: 0.9em; color: #00d4ff; margin: 8px 0; }
+
+/* Export */
+textarea { width: 100%; height: 120px; background: #0d1b2a; color: #0f0; border: 1px solid #0f3460; border-radius: 6px; padding: 8px; font-family: monospace; font-size: 0.75em; resize: vertical; }
+
+/* Legend */
+.legend { font-size: 0.75em; color: #888; margin-top: 10px; line-height: 1.6; }
+.legend strong { color: #aaa; }
+
+/* Description */
+.desc { font-size: 0.8em; color: #aaa; margin: 6px 0; padding: 8px; background: #0d1b2a; border-radius: 6px; min-height: 36px; }
+</style>
+</head>
+<body>
+
+<h1>Artie Alive — LED Preview & Creature Lifecycle</h1>
+<p class="subtitle">Approximate visual simulator for BSides Leeds 2026 badge (18× SK6812). Not exact hardware layout.</p>
+
+<div class="container">
+
+<!-- Left column: Eyes + Animation controls -->
+<div>
+  <div class="panel">
+    <h2>Owl Eyes</h2>
+    <div class="eyes-container">
+      <div>
+        <div class="eye" id="left-eye"></div>
+        <div class="eye-label">Left Eye (LEDs 0–8)</div>
+      </div>
+      <div>
+        <div class="eye" id="right-eye"></div>
+        <div class="eye-label">Right Eye (LEDs 9–17)</div>
+      </div>
+    </div>
+    <div class="step-display">Step: <span id="step-num">0</span> / Frame: <span id="frame-num">0</span></div>
+  </div>
+
+  <div class="panel" style="margin-top: 16px;">
+    <h2>Lifecycle Sequences</h2>
+    <div class="btn-row">
+      <button class="btn lifecycle" onclick="startAnim('wakeup')">Wake-up</button>
+      <button class="btn lifecycle" onclick="startAnim('idle')">Idle Emote Loop</button>
+      <button class="btn lifecycle" onclick="startAnim('sleepclose')">Sleep / Eye-close</button>
+    </div>
+    <h2 style="margin-top:12px;">Individual Emotes</h2>
+    <div class="btn-row">
+      <button class="btn" onclick="startAnim('calm')">Calm</button>
+      <button class="btn" onclick="startAnim('blink')">Blink</button>
+      <button class="btn" onclick="startAnim('wink')">Wink</button>
+      <button class="btn" onclick="startAnim('lookLeft')">Look Left</button>
+      <button class="btn" onclick="startAnim('lookRight')">Look Right</button>
+      <button class="btn" onclick="startAnim('scan')">Scan Room</button>
+      <button class="btn" onclick="startAnim('happy')">Happy Top Arc</button>
+      <button class="btn" onclick="startAnim('sleepy')">Sleepy Lower Arc</button>
+      <button class="btn" onclick="startAnim('angry')">Angry</button>
+      <button class="btn stop" onclick="stopAnim()">Stop / Reset</button>
+    </div>
+    <div class="slider-row">
+      <label>Speed:</label>
+      <input type="range" id="speed" min="10" max="300" value="80">
+      <span class="val" id="speed-val">80ms</span>
+    </div>
+    <div class="slider-row">
+      <label>Brightness:</label>
+      <input type="range" id="brightness" min="10" max="100" value="100">
+      <span class="val" id="bright-val">100%</span>
+    </div>
+    <div class="desc" id="anim-desc">Click an animation button to preview. Manual editing stops any running animation.</div>
+  </div>
+</div>
+
+<!-- Right column: Manual edit + Export -->
+<div>
+  <div class="panel">
+    <h2>Manual Edit</h2>
+    <h3>Selected Colour</h3>
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+      <input type="color" id="colour-picker" value="#00d4ff" style="width:40px;height:30px;border:none;background:none;cursor:pointer;">
+      <span id="colour-rgb" style="font-family:monospace;font-size:0.8em;">(0, 30, 30)</span>
+    </div>
+    <div class="btn-row" id="quick-colours"></div>
+    <h3>Apply to LEDs</h3>
+    <div class="btn-row">
+      <button class="btn" onclick="clearAll()">Clear All</button>
+      <button class="btn" onclick="setAll()">Both Eyes</button>
+      <button class="btn" onclick="setEye('left')">Left Eye</button>
+      <button class="btn" onclick="setEye('right')">Right Eye</button>
+      <button class="btn" onclick="mirror('lr')">Mirror L→R</button>
+      <button class="btn" onclick="mirror('rl')">Mirror R→L</button>
+    </div>
+    <p style="font-size:0.75em;color:#666;margin-top:6px;">Click any LED to set it to the selected colour.</p>
+  </div>
+
+  <div class="panel" style="margin-top: 16px;">
+    <h2>Export</h2>
+    <textarea id="export-area" readonly></textarea>
+    <div class="btn-row" style="margin-top:8px;">
+      <button class="btn" onclick="copyExport()">Copy to Clipboard</button>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top: 16px;">
+    <h2>Legend</h2>
+    <div class="legend">
+      <strong>LEDs 0–8:</strong> Left eye (owl's right eye from its perspective)<br>
+      <strong>LEDs 9–17:</strong> Right eye<br>
+      <strong>Brightness:</strong> Firmware uses max ~30 per channel (out of 255)<br>
+      <strong>Colour order:</strong> GRB on hardware (SK6812), RGB in code<br>
+      <strong>Layout:</strong> Approximate ring — real PCB positions may differ.<br>
+      <strong>Poses:</strong> Lower arc = sleepy, Top arc = happy/alert, Side = looking L/R<br>
+      Update <code>LED_POSITIONS</code> and <code>POSES</code> in JS if exact layout is discovered.
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+// =============================================================
+// LED POSITIONS — update these if exact PCB layout is discovered
+// Each eye has 9 LEDs arranged in a ring. Positions are relative
+// to the eye container (180×180px). Index 0 = top of ring.
+// Ring starts at top (-90°) and goes clockwise.
+// =============================================================
+const LED_POSITIONS = [];
+for (let i = 0; i < 9; i++) {
+  const angle = (i / 9) * 2 * Math.PI - Math.PI / 2;
+  const cx = 90 + 60 * Math.cos(angle) - 14;
+  const cy = 90 + 60 * Math.sin(angle) - 14;
+  LED_POSITIONS.push({ x: cx, y: cy });
+}
+
+// =============================================================
+// LED POSES — candidate shapes for owl expressions
+// Update these indices when real PCB layout is confirmed.
+// Each pose is an array of LED indices within one eye (0–8).
+// To apply to the right eye, add 9 to each index.
+// =============================================================
+const POSES = {
+  // Lower arc: sleepy / half-lidded (bottom of ring)
+  lowerLeft:  [3, 4, 5, 6],
+  lowerRight: [12, 13, 14, 15],
+
+  // Top arc: happy / wide awake / alert (top of ring)
+  topLeft:  [8, 0, 1, 7, 2],
+  topRight: [17, 9, 10, 16, 11],
+
+  // Look left: LEDs weighted to left side of each eye
+  lookLeftL:  [5, 6, 7, 8],
+  lookLeftR:  [14, 15, 16, 17],
+
+  // Look right: LEDs weighted to right side of each eye
+  lookRightL: [1, 2, 3, 4],
+  lookRightR: [10, 11, 12, 13],
+
+  // Full eye (all 9 LEDs)
+  fullLeft:  [0, 1, 2, 3, 4, 5, 6, 7, 8],
+  fullRight: [9, 10, 11, 12, 13, 14, 15, 16, 17],
+
+  // Wink closed: left eye shut as horizontal slit (4 LEDs).
+  // This should read as a closed/squinted eye. Adjust once PCB
+  // layout is confirmed — goal is a horizontal line across the eye.
+  winkClosedLeft: [3, 4, 5, 6],
+
+  // Alternative narrower wink (3 LEDs) if 4 is too wide:
+  // winkClosedLeft: [4, 5, 6],
+  winkLeftNarrow: [3, 4, 5, 6],
+  winkRightOpen:  [9, 10, 11, 12, 13, 14, 15, 16, 17],
+};
+
+// State: 18 LEDs as {r, g, b} (firmware scale: 0-30 typical, 0-255 max)
+const NUM_LEDS = 18;
+const FW_MAX = 30;
+let leds = Array.from({ length: NUM_LEDS }, () => ({ r: 0, g: 0, b: 0 }));
+let ledElements = [];
+let animTimer = null;
+let animStep = 0;
+let currentAnim = null;
+let frameCount = 0;
+let idleState = null;
+let lookState = null;
+
+// Quick colours (firmware-scale values)
+const QUICK_COLOURS = [
+  { name: 'Off',    r: 0,  g: 0,  b: 0,  hex: '#000000' },
+  { name: 'Cyan',   r: 0,  g: 30, b: 30, hex: '#00d4d4' },
+  { name: 'Purple', r: 20, g: 0,  b: 30, hex: '#8800cc' },
+  { name: 'Green',  r: 0,  g: 30, b: 0,  hex: '#00cc00' },
+  { name: 'Red',    r: 30, g: 0,  b: 0,  hex: '#cc0000' },
+  { name: 'Orange', r: 30, g: 12, b: 0,  hex: '#cc5500' },
+  { name: 'White',  r: 20, g: 20, b: 20, hex: '#aaaaaa' },
+  { name: 'Blue',   r: 0,  g: 0,  b: 30, hex: '#0000cc' },
+];
+
+let selectedColour = { r: 0, g: 30, b: 30 };
+
+// ---- Init ----
+function init() {
+  createLeds('left-eye', 0);
+  createLeds('right-eye', 9);
+  createQuickColours();
+  updateExport();
+  document.getElementById('speed').addEventListener('input', updateSpeedLabel);
+  document.getElementById('brightness').addEventListener('input', updateBrightLabel);
+  document.getElementById('colour-picker').addEventListener('input', onPickerChange);
+  updateSpeedLabel();
+  updateBrightLabel();
+}
+
+function createLeds(containerId, offset) {
+  const container = document.getElementById(containerId);
+  for (let i = 0; i < 9; i++) {
+    const led = document.createElement('div');
+    led.className = 'led';
+    led.style.left = LED_POSITIONS[i].x + 'px';
+    led.style.top = LED_POSITIONS[i].y + 'px';
+    led.textContent = offset + i;
+    led.addEventListener('click', () => onLedClick(offset + i));
+    container.appendChild(led);
+    ledElements[offset + i] = led;
+  }
+}
+
+function createQuickColours() {
+  const row = document.getElementById('quick-colours');
+  QUICK_COLOURS.forEach((c, idx) => {
+    const btn = document.createElement('div');
+    btn.className = 'colour-btn' + (idx === 1 ? ' selected' : '');
+    btn.style.backgroundColor = c.hex;
+    btn.title = c.name + ` (${c.r},${c.g},${c.b})`;
+    btn.addEventListener('click', () => selectQuickColour(idx));
+    row.appendChild(btn);
+  });
+}
+
+// ---- Colour selection ----
+function selectQuickColour(idx) {
+  const c = QUICK_COLOURS[idx];
+  selectedColour = { r: c.r, g: c.g, b: c.b };
+  document.querySelectorAll('.colour-btn').forEach((btn, i) => {
+    btn.classList.toggle('selected', i === idx);
+  });
+  document.getElementById('colour-picker').value = c.hex;
+  updateColourLabel();
+}
+
+function onPickerChange(e) {
+  const hex = e.target.value;
+  const r = parseInt(hex.substr(1, 2), 16);
+  const g = parseInt(hex.substr(3, 2), 16);
+  const b = parseInt(hex.substr(5, 2), 16);
+  selectedColour = { r: Math.round(r * FW_MAX / 255), g: Math.round(g * FW_MAX / 255), b: Math.round(b * FW_MAX / 255) };
+  document.querySelectorAll('.colour-btn').forEach(btn => btn.classList.remove('selected'));
+  updateColourLabel();
+}
+
+function updateColourLabel() {
+  document.getElementById('colour-rgb').textContent = `(${selectedColour.r}, ${selectedColour.g}, ${selectedColour.b})`;
+}
+
+// ---- LED interaction ----
+function onLedClick(idx) {
+  stopAnim();
+  leds[idx] = { ...selectedColour };
+  renderLeds();
+  updateExport();
+}
+
+function clearAll() { stopAnim(); leds = leds.map(() => ({ r: 0, g: 0, b: 0 })); renderLeds(); updateExport(); }
+function setAll() { stopAnim(); leds = leds.map(() => ({ ...selectedColour })); renderLeds(); updateExport(); }
+function setEye(side) {
+  stopAnim();
+  const start = side === 'left' ? 0 : 9;
+  for (let i = start; i < start + 9; i++) leds[i] = { ...selectedColour };
+  renderLeds(); updateExport();
+}
+function mirror(dir) {
+  stopAnim();
+  if (dir === 'lr') { for (let i = 0; i < 9; i++) leds[9 + i] = { ...leds[i] }; }
+  else { for (let i = 0; i < 9; i++) leds[i] = { ...leds[9 + i] }; }
+  renderLeds(); updateExport();
+}
+
+// ---- Rendering ----
+function renderLeds() {
+  const bright = parseInt(document.getElementById('brightness').value) / 100;
+  for (let i = 0; i < NUM_LEDS; i++) {
+    const led = leds[i];
+    const r = Math.round((led.r / FW_MAX) * 255 * bright);
+    const g = Math.round((led.g / FW_MAX) * 255 * bright);
+    const b = Math.round((led.b / FW_MAX) * 255 * bright);
+    const el = ledElements[i];
+    el.style.backgroundColor = `rgb(${r},${g},${b})`;
+    const isOn = led.r > 0 || led.g > 0 || led.b > 0;
+    el.classList.toggle('active', isOn);
+    el.style.boxShadow = isOn ? `0 0 10px 3px rgb(${r},${g},${b})` : 'none';
+  }
+}
+
+// ---- Export ----
+function updateExport() {
+  let lines = ['// 18 LEDs: {R, G, B} (firmware scale 0-30)'];
+  lines.push('const uint8_t PATTERN[18][3] = {');
+  for (let i = 0; i < NUM_LEDS; i++) {
+    const l = leds[i];
+    const comment = i < 9 ? `L${i}` : `R${i - 9}`;
+    lines.push(`  {${String(l.r).padStart(2)}, ${String(l.g).padStart(2)}, ${String(l.b).padStart(2)}},  // LED ${i} (${comment})`);
+  }
+  lines.push('};');
+  lines.push('');
+  lines.push('// Compact: R,G,B per LED');
+  lines.push('// ' + leds.map(l => `${l.r},${l.g},${l.b}`).join(' | '));
+  document.getElementById('export-area').value = lines.join('\n');
+}
+
+function copyExport() {
+  const area = document.getElementById('export-area');
+  navigator.clipboard.writeText(area.value).then(() => {
+    const btn = event.target;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy to Clipboard', 1500);
+  });
+}
+
+// ---- Animation engine ----
+function getSpeed() { return parseInt(document.getElementById('speed').value); }
+function updateSpeedLabel() { document.getElementById('speed-val').textContent = document.getElementById('speed').value + 'ms'; }
+function updateBrightLabel() { document.getElementById('bright-val').textContent = document.getElementById('brightness').value + '%'; renderLeds(); }
+
+function stopAnim() {
+  if (animTimer) { clearInterval(animTimer); animTimer = null; }
+  currentAnim = null; animStep = 0; frameCount = 0;
+  idleState = null;
+  lookState = null;
+  document.getElementById('step-num').textContent = '0';
+  document.getElementById('frame-num').textContent = '0';
+  document.getElementById('anim-desc').textContent = 'Stopped. Click an animation or edit LEDs manually.';
+}
+
+function startAnim(name) {
+  stopAnim();
+  currentAnim = name;
+  animStep = 0;
+  idleState = null;
+  lookState = null;
+  const descs = {
+    wakeup: 'Wake-up: Off → sleepy → blink → calm → look L/R → calm. Clean pose sequence.',
+    idle: 'Idle Loop: Continuously cycles through calm, blink, look, wink, happy, sleepy, and rare alert moods.',
+    sleepclose: 'Sleep: Calm → blink → sleepy → blink → off. Clean transitions.',
+    calm: 'Calm: Fully open teal eyes. All LEDs on to show Artie is awake.',
+    blink: 'Blink: Calm pose → off → calm pose. Simple.',
+    wink: 'Wink: Pink playful wink. One eye fully open, the other holds bottom 4 LEDs for ~2 seconds.',
+    lookLeft: 'Look Left: Left-side cluster with personality: normal, orange false positive, or rare red alert.',
+    lookRight: 'Look Right: Right-side cluster with personality: normal, orange false positive, or rare red alert.',
+    scan: 'Scan: Slow amber/orange 4-LED gaze clusters. Alert room scanning.',
+    happy: 'Happy: Top arc in green. Brief bounce. No lower arc.',
+    sleepy: 'Sleepy: Blue lower arc breathes by raising/lowering brightness.',
+    angry: 'Angry: Solid red/orange angry stare. No blink.',
+  };
+  document.getElementById('anim-desc').textContent = descs[name] || '';
+  animTimer = setInterval(animFrame, getSpeed());
+}
+
+function animFrame() {
+  frameCount++;
+  document.getElementById('step-num').textContent = animStep;
+  document.getElementById('frame-num').textContent = frameCount;
+
+  const animFns = {
+    wakeup: animWakeUp,
+    idle: animIdleLoop,
+    sleepclose: animSleepClose,
+    calm: animCalm,
+    blink: animBlink,
+    wink: animWink,
+    lookLeft: animLookLeft,
+    lookRight: animLookRight,
+    scan: animScan,
+    happy: animHappy,
+    sleepy: animSleepy,
+    angry: animAngry,
+  };
+
+  const fn = animFns[currentAnim];
+  if (fn) fn(animStep);
+
+  animStep++;
+  renderLeds();
+  updateExport();
+}
+
+// =============================================================
+// COLOUR CONSTANTS — consistent palette for character poses.
+// All values are firmware-scale (0–30).
+// =============================================================
+const COLOURS = {
+  CALM:   { r: 0, g: 18, b: 16 },  // bright teal — neutral/relaxed
+  HAPPY:  { r: 0, g: 24, b: 4 },   // bright green — alert/friendly
+  SLEEPY: { r: 0, g: 0,  b: 30 },  // blue — drowsy/sleepy
+  WINK:   { r: 28, g: 13, b: 21 },  // pink — playful
+  ANGRY:  { r: 28, g: 6, b: 0 },   // red-orange — irritated
+  SCAN:   { r: 28, g: 13, b: 0 },  // amber/orange — active scanning
+  ALERT:  { r: 30, g: 10, b: 0 },  // warning orange — noticed something
+  DANGER: { r: 30, g: 0,  b: 0 },  // red — alert/angry
+  OFF:    { r: 0, g: 0,  b: 0 },
+};
+
+// =============================================================
+// POSE HELPERS — named character poses.
+// Each pose sets specific LEDs on/off using POSES indices.
+// To adjust for real PCB layout, edit POSES above — these
+// helpers and all animations reference POSES by name.
+// =============================================================
+function setAllOff() { for (let i = 0; i < NUM_LEDS; i++) leds[i] = { ...COLOURS.OFF }; }
+function setIndices(indices, col) { for (const i of indices) leds[i] = { ...col }; }
+
+// Set local LED index (0–8) on BOTH eyes. Keeps eyes in sync.
+function setBothLocal(localIdx, col) {
+  leds[localIdx] = { ...col };
+  leds[localIdx + 9] = { ...col };
+}
+
+// --- Named character poses ---
+
+function setCalmPose() {
+  // Calm/neutral: all LEDs lit in teal. Reads as fully open, awake eyes.
+  setAllOff();
+  setIndices(POSES.fullLeft, COLOURS.CALM);
+  setIndices(POSES.fullRight, COLOURS.CALM);
+}
+
+function setOpenPose() {
+  // Open/awake: same as calm — full ring in calm teal.
+  setAllOff();
+  setIndices(POSES.fullLeft, COLOURS.CALM);
+  setIndices(POSES.fullRight, COLOURS.CALM);
+}
+
+function setSleepyPose(blue = COLOURS.SLEEPY.b) {
+  // Sleepy: lower arc only, pure blue. Caller can vary blue brightness.
+  setAllOff();
+  setIndices(POSES.lowerLeft, { r: 0, g: 0, b: blue });
+  setIndices(POSES.lowerRight, { r: 0, g: 0, b: blue });
+}
+
+function setClosedPose() {
+  // Closed / blink: all off.
+  setAllOff();
+}
+
+function setHappyPose() {
+  // Happy: top arc only, bright green.
+  setAllOff();
+  setIndices(POSES.topLeft, COLOURS.HAPPY);
+  setIndices(POSES.topRight, COLOURS.HAPPY);
+}
+
+function setLookLeftPose(col = COLOURS.CALM) {
+  // Look left: left-side cluster on both eyes, cyan.
+  setAllOff();
+  setIndices(POSES.lookLeftL, col);
+  setIndices(POSES.lookLeftR, col);
+}
+
+function setLookRightPose(col = COLOURS.CALM) {
+  // Look right: right-side cluster on both eyes, cyan.
+  setAllOff();
+  setIndices(POSES.lookRightL, col);
+  setIndices(POSES.lookRightR, col);
+}
+
+function setWinkPose() {
+  // Wink: right eye fully open, left eye closed to bottom 4 LEDs.
+  // Brightness stays constant: right full eye and left bottom 4 use WINK pink.
+  // The top 5 LEDs of the left eye are OFF while winkClosedLeft remains ON.
+  // Adjust winkClosedLeft indices once PCB layout is confirmed —
+  // the goal is a horizontal line that reads as "shut eye".
+  setAllOff();
+  setIndices(POSES.fullRight, COLOURS.WINK);
+  setIndices(POSES.winkClosedLeft, COLOURS.WINK);
+}
+
+function setScanWindow(localCenter, col) {
+  // 4-LED scanning cluster centered on localCenter, wrapping around ring.
+  // All LEDs use the same colour/brightness — clean gaze shape, no trail.
+  setAllOff();
+  for (const offset of [-1, 0, 1, 2]) {
+    let idx = localCenter + offset;
+    if (idx < 0) idx += 9;
+    if (idx > 8) idx -= 9;
+    setBothLocal(idx, col);
+  }
+}
+
+// =============================================================
+// ANIMATION IMPLEMENTATIONS — character pose sequences.
+// Most animations switch between named poses.
+// =============================================================
+
+function animCalm(step) {
+  // Calm: fully open teal eyes. All LEDs on, same colour.
+  // This intentionally reads as awake/open, not sleepy or half-lidded.
+  setCalmPose();
+}
+
+function animBlink(step) {
+  // Blink: calm pose → off briefly → calm pose. 30 steps ≈ 2.4s.
+  const pos = step % 30;
+  if (pos >= 12 && pos <= 15) {
+    setClosedPose();
+  } else {
+    setCalmPose();
+  }
+}
+
+function animWink(step) {
+  // Wink: clean pose switching.
+  // Pink playful colour. Both open → left top LEDs off, bottom 4 stay ON at same brightness → hold ~2s → both open.
+  // At default 80ms, 25 frames ≈ 2 seconds.
+  const pos = step % 55;
+  if (pos < 10) {
+    // Both eyes open in wink colour
+    setAllOff();
+    setIndices(POSES.fullLeft, COLOURS.WINK);
+    setIndices(POSES.fullRight, COLOURS.WINK);
+  } else if (pos < 37) {
+    // Hold wink pose. No brightness change — just top 5 LEDs on left turn off.
+    setWinkPose();
+  } else {
+    // Both eyes open in wink colour
+    setAllOff();
+    setIndices(POSES.fullLeft, COLOURS.WINK);
+    setIndices(POSES.fullRight, COLOURS.WINK);
+  }
+}
+
+function chooseLookSequence(side) {
+  // Each look becomes a tiny story:
+  // normal curiosity, sometimes orange "maybe I saw something",
+  // and rarely red "actually alert/angry" before returning normal.
+  const r = Math.random();
+  const phases = [{ colour: COLOURS.CALM, duration: randInt(22, 45) }];
+
+  if (r < 0.55) {
+    phases.push({ colour: COLOURS.CALM, duration: randInt(35, 70) });
+  } else if (r < 0.88) {
+    phases.push({ colour: COLOURS.ALERT, duration: randInt(18, 34) });
+    phases.push({ colour: COLOURS.CALM, duration: randInt(35, 70) });
+  } else {
+    phases.push({ colour: COLOURS.ALERT, duration: randInt(14, 26) });
+    phases.push({ colour: COLOURS.CALM, duration: randInt(12, 24) });
+    phases.push({ colour: COLOURS.DANGER, duration: randInt(18, 34) });
+    phases.push({ colour: COLOURS.CALM, duration: randInt(35, 70) });
+  }
+
+  return { side, phases, phase: 0, remaining: phases[0].duration };
+}
+
+function renderLookSequence(state) {
+  const colour = state.phases[state.phase].colour;
+  if (state.side === 'left') setLookLeftPose(colour);
+  else setLookRightPose(colour);
+}
+
+function tickLookSequence(state) {
+  state.remaining--;
+  if (state.remaining > 0) return state;
+
+  state.phase++;
+  if (state.phase >= state.phases.length) return null;
+
+  state.remaining = state.phases[state.phase].duration;
+  return state;
+}
+
+function animLookLeft(step) {
+  // Look left: continually runs small personality sequences.
+  if (!lookState || lookState.side !== 'left') lookState = chooseLookSequence('left');
+  renderLookSequence(lookState);
+  lookState = tickLookSequence(lookState);
+}
+
+function animLookRight(step) {
+  // Look right: continually runs small personality sequences.
+  if (!lookState || lookState.side !== 'right') lookState = chooseLookSequence('right');
+  renderLookSequence(lookState);
+  lookState = tickLookSequence(lookState);
+}
+
+function animScan(step) {
+  // Scan: slower, room-looking gaze changes rather than a circular chase.
+  // Holds each 4-LED cluster for ~560ms at the default 80ms speed.
+  // Both eyes always use the same local index cluster.
+  const gazePath = [4, 1, 7, 2, 6, 0, 8, 3, 5, 1, 6, 4];
+  const frame = Math.floor(step / 7); // 7 * 80ms ≈ 560ms per gaze
+  const localCenter = gazePath[frame % gazePath.length];
+  setScanWindow(localCenter, COLOURS.SCAN);
+}
+
+function animHappy(step) {
+  // Happy: top arc in green. Simple on/off with brief bounce.
+  // 40-step cycle: on → off briefly → on → hold.
+  const pos = step % 40;
+  if (pos < 15) {
+    setHappyPose();
+  } else if (pos < 18) {
+    // Tiny bounce: off for 3 frames
+    setAllOff();
+  } else {
+    // Hold happy
+    setHappyPose();
+  }
+}
+
+function animSleepy(step) {
+  // Sleepy: pure blue (0,0,30) on lower arc, breathing brightness only.
+  // 80-step cycle ≈ 6.4s at 80ms. Active LEDs stay same shape/colour family.
+  const pos = step % 80;
+  const wave = pos <= 40 ? pos : 80 - pos;
+  const blue = Math.round(6 + (24 * wave / 40)); // b: 6 → 30 → 6
+  setSleepyPose(blue);
+}
+
+function animAngry(step) {
+  // Angry: solid red/orange stare. No blink/off pulse.
+  setAllOff();
+  setIndices(POSES.fullLeft, COLOURS.ANGRY);
+  setIndices(POSES.fullRight, COLOURS.ANGRY);
+}
+
+// ---- Lifecycle sequences ----
+
+function animWakeUp(step) {
+  // Wake-up: clean pose sequence. ~70 steps at 80ms ≈ 5.6s.
+  //
+  //  0–14:  All off (sleeping)
+  // 15–24:  Sleepy lower arc (dim, eyes barely open)
+  // 25–28:  Blink off
+  // 29–44:  Calm pose (awake)
+  // 45–48:  Blink off
+  // 49–56:  Look left
+  // 57–64:  Look right
+  // 65+:    Settle into calm
+
+  if (step < 15) {
+    setClosedPose();
+  } else if (step < 25) {
+    setSleepyPose();
+  } else if (step < 29) {
+    setClosedPose(); // blink
+  } else if (step < 45) {
+    setCalmPose();
+  } else if (step < 49) {
+    setClosedPose(); // blink
+  } else if (step < 57) {
+    setLookLeftPose();
+  } else if (step < 65) {
+    setLookRightPose();
+  } else {
+    setCalmPose();
+  }
+}
+
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function chooseIdleAction() {
+  // Random weighted emote selector. It keeps moving without needing
+  // another button press, but still favours calm so Artie doesn't look frantic.
+  const r = Math.random();
+  if (r < 0.34) return { action: 'calm', remaining: randInt(55, 140) };
+  if (r < 0.48) return { action: 'blink', remaining: randInt(4, 6) };
+  if (r < 0.63) return { action: 'look', look: chooseLookSequence('left') };
+  if (r < 0.78) return { action: 'look', look: chooseLookSequence('right') };
+  if (r < 0.88) return { action: 'happy', remaining: randInt(24, 48) };
+  if (r < 0.95) return { action: 'wink', remaining: 55 };
+  if (r < 0.985) return { action: 'sleepy', remaining: randInt(35, 80), start: randInt(0, 79) };
+  return { action: 'angry', remaining: randInt(16, 30) };
+}
+
+function renderIdleAction(state) {
+  switch (state.action) {
+    case 'blink':
+      setClosedPose();
+      break;
+    case 'look':
+      renderLookSequence(state.look);
+      state.look = tickLookSequence(state.look);
+      if (!state.look) state.remaining = 0;
+      break;
+    case 'happy':
+      setHappyPose();
+      break;
+    case 'wink':
+      animWink(55 - state.remaining);
+      break;
+    case 'sleepy':
+      animSleepy((state.start || 0) + (80 - state.remaining));
+      break;
+    case 'angry':
+      animAngry(0);
+      break;
+    case 'calm':
+    default:
+      setCalmPose();
+      break;
+  }
+}
+
+function animIdleLoop(step) {
+  // Continuous personality loop. It repeatedly chooses one of the individual
+  // emotes and lets it play for a short randomized duration. Look emotes can
+  // shift normal → orange false positive → normal → rare red alert.
+  if (!idleState || idleState.remaining <= 0) {
+    idleState = chooseIdleAction();
+  }
+
+  renderIdleAction(idleState);
+  if (idleState.remaining !== undefined) idleState.remaining--;
+}
+
+function animSleepClose(step) {
+  // Sleep/eye-close: clean pose transitions to off.
+  // ~45 steps at 80ms ≈ 3.6s.
+  //
+  //  0–12:  Calm pose (awake)
+  // 13–16:  Blink
+  // 17–29:  Sleepy pose (lower arc dim)
+  // 30–33:  Blink
+  // 34–44:  All off (asleep)
+
+  if (step < 13) {
+    setCalmPose();
+  } else if (step < 17) {
+    setClosedPose(); // blink
+  } else if (step < 30) {
+    setSleepyPose();
+  } else if (step < 34) {
+    setClosedPose(); // blink
+  } else {
+    setClosedPose(); // sleep
+  }
+}
+
+// ---- Speed slider live update ----
+document.getElementById('speed').addEventListener('input', () => {
+  updateSpeedLabel();
+  if (animTimer && currentAnim) {
+    clearInterval(animTimer);
+    animTimer = setInterval(animFrame, getSpeed());
+  }
+});
+
+// ---- Boot ----
+init();
+renderLeds();
+</script>
+</body>
+</html>
