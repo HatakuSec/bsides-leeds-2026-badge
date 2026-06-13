@@ -205,34 +205,6 @@ void miniSleep(uint8_t period = RTC_PERIOD_CYC16_gc)
   RTC.PITINTCTRL = ~(RTC_PI_bm);
 }
 
-void artieCloseEyes()
-{
-  for (uint8_t f = 0; f < 70; f++) {
-    setAllLeds(COLOR_OFF);
-    if (f < 11) {
-      // full teal (still awake) — hardcoded because ARTIE_CALM_COL defined later
-      setAllLeds(0, 18, 16);
-    } else if (f >= 15 && f < 51) {
-      // lower arc blue pulse with decaying envelope
-      uint8_t local = f - 15;
-      uint8_t base = 30 - (local * 5) / 6;
-      uint8_t wave = local % 18;
-      uint8_t mod;
-      if (wave <= 9) {
-        mod = (wave * 8) / 9;
-      } else {
-        mod = ((17 - wave) * 8) / 9;
-      }
-      int8_t val = (int8_t)base - 4 + (int8_t)mod;
-      uint8_t bright = val < 0 ? 0 : (val > 30 ? 30 : (uint8_t)val);
-      artieSetBothEyesMask(0x078, 0, 0, bright);
-    }
-    // frames 11-14: off (blink), frames 51-54: off (blink), frames 55-69: off (asleep)
-    ledStrip.show();
-    delay(80);
-  }
-}
-
 void enterSleep()
 {
   if (gAnimMode == 0) {
@@ -668,34 +640,55 @@ static const uint16_t MASK_FULL   = 0x1FF;  // bits 0-8
 // progressing clockwise. "Right eye" means the badge's right eye from that
 // same front-facing viewer perspective.
 static const uint8_t ARTIE_LEFT_EYE_MAP[LEDS_PER_EYE] PROGMEM = {2, 3, 4, 5, 7, 6, 8, 0, 1};
-static const uint8_t ARTIE_RIGHT_EYE_MAP[LEDS_PER_EYE] PROGMEM = {17, 9, 10, 11, 12, 13, 14, 15, 16};
+static const uint16_t ARTIE_LEFT_MASK_LOWER  = 0x1E0;
+static const uint16_t ARTIE_LEFT_MASK_TOP    = 0x01F;
+static const uint16_t ARTIE_LEFT_MASK_LOOK_L = 0x143;
+static const uint16_t ARTIE_LEFT_MASK_LOOK_R = 0x0B8;
 
-uint8_t artieEyeIndex(bool rightEye, uint8_t logicalIndex)
+void artieSetEyePairLed(uint8_t logicalIndex, uint8_t red, uint8_t green, uint8_t blue)
 {
-  return pgm_read_byte((rightEye ? ARTIE_RIGHT_EYE_MAP : ARTIE_LEFT_EYE_MAP) + logicalIndex);
-}
-
-void artieSetEyeLed(bool rightEye, uint8_t logicalIndex, uint8_t red, uint8_t green, uint8_t blue)
-{
-  ledStrip.setPixelColor(artieEyeIndex(rightEye, logicalIndex), red, green, blue);
+  ledStrip.setPixelColor(pgm_read_byte(ARTIE_LEFT_EYE_MAP + logicalIndex), red, green, blue);
+  setRightEyeLed(logicalIndex, red, green, blue);
 }
 
 void artieSetEyeMask(uint16_t leftMask, uint16_t rightMask, uint8_t red, uint8_t green, uint8_t blue)
 {
-  for (uint8_t logicalIndex = 0; logicalIndex < LEDS_PER_EYE; ++logicalIndex) {
-    if (leftMask & (1 << logicalIndex)) {
-      artieSetEyeLed(false, logicalIndex, red, green, blue);
+  for (uint8_t physicalLeftIndex = 0; physicalLeftIndex < LEDS_PER_EYE; ++physicalLeftIndex) {
+    if (leftMask & (1 << physicalLeftIndex)) {
+      ledStrip.setPixelColor(physicalLeftIndex, red, green, blue);
     }
 
-    if (rightMask & (1 << logicalIndex)) {
-      artieSetEyeLed(true, logicalIndex, red, green, blue);
+    if (rightMask & (1 << physicalLeftIndex)) {
+      setRightEyeLed(physicalLeftIndex, red, green, blue);
     }
   }
 }
 
-void artieSetBothEyesMask(uint16_t mask, uint8_t red, uint8_t green, uint8_t blue)
+void artieCloseEyes()
 {
-  artieSetEyeMask(mask, mask, red, green, blue);
+  for (uint8_t f = 0; f < 70; f++) {
+    setAllLeds(COLOR_OFF);
+    if (f < 11) {
+      setAllLeds(ARTIE_CALM_COL);
+    } else if (f >= 15 && f < 51) {
+      // lower arc blue pulse with decaying envelope
+      uint8_t local = f - 15;
+      uint8_t base = 30 - (local * 5) / 6;
+      uint8_t wave = local % 18;
+      uint8_t mod;
+      if (wave <= 9) {
+        mod = (wave * 8) / 9;
+      } else {
+        mod = ((17 - wave) * 8) / 9;
+      }
+      int8_t val = (int8_t)base - 4 + (int8_t)mod;
+      uint8_t bright = val < 0 ? 0 : (val > 30 ? 30 : (uint8_t)val);
+      artieSetEyeMask(ARTIE_LEFT_MASK_LOWER, MASK_LOWER, 0, 0, bright);
+    }
+    // frames 11-14: off (blink), frames 51-54: off (blink), frames 55-69: off (asleep)
+    ledStrip.show();
+    delay(80);
+  }
 }
 
 // Demo sequence: {emote, duration, arg}
@@ -742,13 +735,13 @@ uint8_t artieAliveMode(uint16_t step)
       } else {
         bright = 4 + ((12 - local) * 26) / 6;
       }
-      artieSetBothEyesMask(MASK_LOWER, 0, 0, bright);
+      artieSetEyeMask(ARTIE_LEFT_MASK_LOWER, MASK_LOWER, 0, 0, bright);
     } else if (step >= 52 && step < 68) {
       setAllLeds(ARTIE_CALM_COL);
     } else if (step >= 72 && step < 80) {
-      artieSetBothEyesMask(MASK_LOOK_L, ARTIE_CALM_COL.red, ARTIE_CALM_COL.green, ARTIE_CALM_COL.blue);
+      artieSetEyeMask(ARTIE_LEFT_MASK_LOOK_L, MASK_LOOK_L, ARTIE_CALM_COL.red, ARTIE_CALM_COL.green, ARTIE_CALM_COL.blue);
     } else if (step >= 80 && step < 88) {
-      artieSetBothEyesMask(MASK_LOOK_R, ARTIE_CALM_COL.red, ARTIE_CALM_COL.green, ARTIE_CALM_COL.blue);
+      artieSetEyeMask(ARTIE_LEFT_MASK_LOOK_R, MASK_LOOK_R, ARTIE_CALM_COL.red, ARTIE_CALM_COL.green, ARTIE_CALM_COL.blue);
     } else if (step >= 88) {
       setAllLeds(ARTIE_CALM_COL);
     }
@@ -873,10 +866,6 @@ uint8_t artieAliveMode(uint16_t step)
       uint8_t tri = local <= 16 ? local : 32 - local;
       uint8_t bright = 8 + ((tri * 22) >> 4);
       for (uint8_t i = 0; i < NUM_LEDS; i++) ledStrip.setPixelColor(i, bright, 0, 0);
-    } else if (artie.emote == EMOTE_EXCITED) {
-      // Green top/full bounce every 5 frames
-      mask = (((artie.subStep / 5) & 1) == 0) ? MASK_TOP : MASK_FULL;
-      cr = ARTIE_HAPPY_COL.red; cg = ARTIE_HAPPY_COL.green; cb = ARTIE_HAPPY_COL.blue;
     } else if (artie.emote == EMOTE_SCAN) {
       uint8_t chunkOff = artie.subStep & 0x0F;
       if (artie.subStep > 0 && chunkOff == 0) {
@@ -889,12 +878,9 @@ uint8_t artieAliveMode(uint16_t step)
       uint8_t p = (base + 9 + sweepOff) % 9;
       uint8_t a = (p + 8) % 9;
       uint8_t b = (p + 1) % 9;
-      artieSetEyeLed(false, p, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
-      artieSetEyeLed(false, a, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
-      artieSetEyeLed(false, b, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
-      artieSetEyeLed(true, p, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
-      artieSetEyeLed(true, a, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
-      artieSetEyeLed(true, b, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
+      artieSetEyePairLed(p, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
+      artieSetEyePairLed(a, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
+      artieSetEyePairLed(b, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
     } else if (artie.emote == EMOTE_THINKING) {
       uint8_t phase = (artie.subStep >> 2) % 5;
       uint8_t center;
@@ -903,12 +889,9 @@ uint8_t artieAliveMode(uint16_t step)
       else center = 1;
       uint8_t ta = (center + 8) % 9;
       uint8_t tb = (center + 1) % 9;
-      artieSetEyeLed(false, center, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
-      artieSetEyeLed(false, ta, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
-      artieSetEyeLed(false, tb, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
-      artieSetEyeLed(true, center, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
-      artieSetEyeLed(true, ta, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
-      artieSetEyeLed(true, tb, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
+      artieSetEyePairLed(center, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
+      artieSetEyePairLed(ta, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
+      artieSetEyePairLed(tb, ARTIE_SCAN_COL.red, ARTIE_SCAN_COL.green, ARTIE_SCAN_COL.blue);
     } else {
       if (artie.emote == EMOTE_LOOK) {
         mask = (artie.arg & 1) ? MASK_LOOK_R : MASK_LOOK_L;
@@ -934,6 +917,10 @@ uint8_t artieAliveMode(uint16_t step)
       } else if (artie.emote == EMOTE_SUSPICIOUS) {
         mask = ((artie.subStep >> 3) & 1) ? MASK_LOOK_R : MASK_LOOK_L;
         cr = ARTIE_SCAN_COL.red; cg = ARTIE_SCAN_COL.green; cb = ARTIE_SCAN_COL.blue;
+      } else if (artie.emote == EMOTE_EXCITED) {
+        // Green top/full bounce every 5 frames
+        mask = (((artie.subStep / 5) & 1) == 0) ? MASK_TOP : MASK_FULL;
+        cr = ARTIE_HAPPY_COL.red; cg = ARTIE_HAPPY_COL.green; cb = ARTIE_HAPPY_COL.blue;
       } else if (artie.emote == EMOTE_WINK) {
         cr = ARTIE_WINK_COL.red; cg = ARTIE_WINK_COL.green; cb = ARTIE_WINK_COL.blue;
         bool winkRightEye = (artie.arg & 1) != 0;
@@ -947,15 +934,20 @@ uint8_t artieAliveMode(uint16_t step)
           winkPhase = (artie.subStep >= 8 && artie.subStep < 16) ? 1 : 0;
         }
         if (winkPhase) {
-          uint16_t leftMask = winkRightEye ? MASK_FULL : MASK_LOWER;
+          uint16_t leftMask = winkRightEye ? MASK_FULL : ARTIE_LEFT_MASK_LOWER;
           uint16_t rightMask = winkRightEye ? MASK_LOWER : MASK_FULL;
           artieSetEyeMask(leftMask, rightMask, cr, cg, cb);
         } else {
-          artieSetBothEyesMask(MASK_FULL, cr, cg, cb);
+          artieSetEyeMask(MASK_FULL, MASK_FULL, cr, cg, cb);
         }
       }
       if (artie.emote != EMOTE_WINK) {
-        artieSetBothEyesMask(mask, cr, cg, cb);
+        uint16_t leftMask = mask;
+        if (mask == MASK_LOWER) leftMask = ARTIE_LEFT_MASK_LOWER;
+        else if (mask == MASK_TOP) leftMask = ARTIE_LEFT_MASK_TOP;
+        else if (mask == MASK_LOOK_L) leftMask = ARTIE_LEFT_MASK_LOOK_L;
+        else if (mask == MASK_LOOK_R) leftMask = ARTIE_LEFT_MASK_LOOK_R;
+        artieSetEyeMask(leftMask, mask, cr, cg, cb);
       }
     }
 

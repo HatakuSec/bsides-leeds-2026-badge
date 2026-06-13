@@ -62,8 +62,8 @@ input[type=checkbox] { margin-right: 3px; vertical-align: middle; }
   <div class="panel">
     <div class="mode-indicator">Mode: <strong id="mode-label">0 — Artie Alive</strong></div>
     <div class="eyes-container">
-      <div><div class="eye" id="left-eye"></div><div class="eye-label">Left Eye (0–8)</div></div>
-      <div><div class="eye" id="right-eye"></div><div class="eye-label">Right Eye (9–17)</div></div>
+      <div><div class="eye" id="left-eye"></div><div class="eye-label">Left Eye (front-view logical 0–8)</div></div>
+      <div><div class="eye" id="right-eye"></div><div class="eye-label">Right Eye (front-view logical 0–8)</div></div>
     </div>
     <div class="desc-box" id="emote-desc"></div>
   </div>
@@ -188,7 +188,7 @@ const ARTIE_CALM_COL  = { r: 0, g: 18, b: 16 };
 const ARTIE_SCAN_COL  = { r: 28, g: 13, b: 0 };
 const ARTIE_SLEEP_COL = { r: 0, g: 0, b: 30 };
 const ARTIE_HAPPY_COL = { r: 0, g: 24, b: 4 };
-const ARTIE_WINK_COL  = { r: 28, g: 13, b: 21 };
+const ARTIE_WINK_COL  = { r: 30, g: 0, b: 18 };
 const COLOR_RED       = { r: 30, g: 0, b: 0 };
 const COLOR_OFF       = { r: 0, g: 0, b: 0 };
 
@@ -198,6 +198,12 @@ const MASK_TOP    = 0x187;  // bits 0,1,2,7,8
 const MASK_LOOK_L = 0x1E0;  // bits 5,6,7,8
 const MASK_LOOK_R = 0x01E;  // bits 1,2,3,4
 const MASK_FULL   = 0x1FF;  // bits 0-8
+
+// Artie eye convention: logical indices 0-8 are front-view positions for one
+// eye, with logical 0 at the physical top LED and indices increasing clockwise.
+// "Right eye" means the badge's own right eye from that same viewer-facing view.
+const ARTIE_LEFT_EYE_MAP = [2, 3, 4, 5, 7, 6, 8, 0, 1];
+const ARTIE_RIGHT_EYE_MAP = [17, 9, 10, 11, 12, 13, 14, 15, 16];
 
 // LFSR — exact firmware implementation
 let randomState = 0xACE1;
@@ -214,7 +220,19 @@ function seedRandom(v) { randomState = v || 0xACE1; if (!randomState) randomStat
 let leds = Array.from({ length: NUM_LEDS }, () => ({ r: 0, g: 0, b: 0 }));
 function setAllLeds(col) { for (let i = 0; i < NUM_LEDS; i++) leds[i] = { ...col }; }
 function setPixelColor(idx, r, g, b) { if (idx >= 0 && idx < NUM_LEDS) leds[idx] = { r, g, b }; }
-function applyMaskBoth(mask, r, g, b) { for (let i = 0; i < 9; i++) { if (mask & (1 << i)) { setPixelColor(i, r, g, b); setPixelColor(i + 9, r, g, b); } } }
+function artieEyeIndex(rightEye, logicalIndex) {
+  return (rightEye ? ARTIE_RIGHT_EYE_MAP : ARTIE_LEFT_EYE_MAP)[logicalIndex];
+}
+function artieSetEyeLed(rightEye, logicalIndex, r, g, b) {
+  setPixelColor(artieEyeIndex(rightEye, logicalIndex), r, g, b);
+}
+function artieSetEyeMask(leftMask, rightMask, r, g, b) {
+  for (let logicalIndex = 0; logicalIndex < 9; logicalIndex++) {
+    if (leftMask & (1 << logicalIndex)) artieSetEyeLed(false, logicalIndex, r, g, b);
+    if (rightMask & (1 << logicalIndex)) artieSetEyeLed(true, logicalIndex, r, g, b);
+  }
+}
+function applyMaskBoth(mask, r, g, b) { artieSetEyeMask(mask, mask, r, g, b); }
 
 // ArtieState — exact firmware struct
 let artie = { lifecycle: ARTIE_WAKEUP, emote: EMOTE_CALM, subStep: 0, duration: 0, arg: 0 };
@@ -428,10 +446,7 @@ function proposedWakeUp(step) {
     } else {
       bright = 4 + (((12 - local) * 26) / 6) | 0;
     }
-    for (let i = 3; i <= 6; i++) {
-      setPixelColor(i, 0, 0, bright);
-      setPixelColor(i + 9, 0, 0, bright);
-    }
+    applyMaskBoth(MASK_LOWER, 0, 0, bright);
   } else if (step < 52) {
     // blink off
   } else if (step < 68) {
@@ -460,7 +475,7 @@ function firmwareCloseEyes(f) {
   if (f < 13) {
     for (let i = 0; i < 9; i++) { setPixelColor(i, 0, 18, 16); setPixelColor(i + 9, 0, 18, 16); }
   } else if (f >= 17 && f < 30) {
-    for (let i = 3; i <= 6; i++) { setPixelColor(i, 0, 0, 30); setPixelColor(i + 9, 0, 0, 30); }
+    applyMaskBoth(MASK_LOWER, 0, 0, 30);
   }
 }
 
@@ -496,10 +511,7 @@ function proposedCloseEyes(f) {
     const half = 9;
     const mod = wave <= half ? ((wave * 8) / half) | 0 : (((17 - wave) * 8) / half) | 0;
     const bright = Math.min(30, Math.max(0, base - 4 + mod));
-    for (let i = 3; i <= 6; i++) {
-      setPixelColor(i, 0, 0, bright);
-      setPixelColor(i + 9, 0, 0, bright);
-    }
+    applyMaskBoth(MASK_LOWER, 0, 0, bright);
   } else if (f < 55) {
     // blink off
   }
@@ -672,32 +684,26 @@ function renderIdleEmote() {
     cr = ARTIE_SCAN_COL.r; cg = ARTIE_SCAN_COL.g; cb = ARTIE_SCAN_COL.b;
   } else if (artie.emote === EMOTE_WINK) {
     cr = ARTIE_WINK_COL.r; cg = ARTIE_WINK_COL.g; cb = ARTIE_WINK_COL.b;
-    const winkEye = artie.arg & 1;
+    const winkRightEye = (artie.arg & 1) !== 0;
     if (artieForced === 2) {
       // Forced wink: slower 60-frame cycle
       const cycle = artie.subStep % 60;
       if (cycle >= 25 && cycle < 35) {
-        const openOfs = winkEye ? 0 : 9;
-        const shutOfs = winkEye ? 9 : 0;
-        for (let i = 0; i < 9; i++) {
-          setPixelColor(i + openOfs, cr, cg, cb);
-          if (MASK_LOWER & (1 << i)) setPixelColor(i + shutOfs, cr, cg, cb);
-        }
+        const leftMask = winkRightEye ? MASK_FULL : MASK_LOWER;
+        const rightMask = winkRightEye ? MASK_LOWER : MASK_FULL;
+        artieSetEyeMask(leftMask, rightMask, cr, cg, cb);
       } else {
-        for (let i = 0; i < 9; i++) { setPixelColor(i, cr, cg, cb); setPixelColor(i + 9, cr, cg, cb); }
+        applyMaskBoth(MASK_FULL, cr, cg, cb);
       }
     } else {
       // Idle wink: single 24-frame play (no repeat)
       // 0-7: both open, 8-15: wink, 16-23: both open
       if (artie.subStep >= 8 && artie.subStep < 16) {
-        const openOfs = winkEye ? 0 : 9;
-        const shutOfs = winkEye ? 9 : 0;
-        for (let i = 0; i < 9; i++) {
-          setPixelColor(i + openOfs, cr, cg, cb);
-          if (MASK_LOWER & (1 << i)) setPixelColor(i + shutOfs, cr, cg, cb);
-        }
+        const leftMask = winkRightEye ? MASK_FULL : MASK_LOWER;
+        const rightMask = winkRightEye ? MASK_LOWER : MASK_FULL;
+        artieSetEyeMask(leftMask, rightMask, cr, cg, cb);
       } else {
-        for (let i = 0; i < 9; i++) { setPixelColor(i, cr, cg, cb); setPixelColor(i + 9, cr, cg, cb); }
+        applyMaskBoth(MASK_FULL, cr, cg, cb);
       }
     }
     return;
@@ -733,12 +739,12 @@ function renderScan() {
   const a = (p + 8) % 9;
   const b = (p + 1) % 9;
 
-  setPixelColor(p, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
-  setPixelColor(a, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
-  setPixelColor(b, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
-  setPixelColor(p + 9, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
-  setPixelColor(a + 9, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
-  setPixelColor(b + 9, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  artieSetEyeLed(false, p, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  artieSetEyeLed(false, a, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  artieSetEyeLed(false, b, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  artieSetEyeLed(true, p, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  artieSetEyeLed(true, a, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  artieSetEyeLed(true, b, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
 }
 
 // =============================================================
@@ -758,12 +764,12 @@ function renderThinking() {
   const ta = (center + 8) % 9;
   const tb = (center + 1) % 9;
 
-  setPixelColor(center, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
-  setPixelColor(ta, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
-  setPixelColor(tb, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
-  setPixelColor(center + 9, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
-  setPixelColor(ta + 9, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
-  setPixelColor(tb + 9, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  artieSetEyeLed(false, center, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  artieSetEyeLed(false, ta, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  artieSetEyeLed(false, tb, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  artieSetEyeLed(true, center, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  artieSetEyeLed(true, ta, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
+  artieSetEyeLed(true, tb, ARTIE_SCAN_COL.r, ARTIE_SCAN_COL.g, ARTIE_SCAN_COL.b);
 }
 
 // =============================================================
@@ -1020,7 +1026,19 @@ function resetCounts() { emoteStats = {}; calmGapTotalFrames = 0; updateState();
 const LED_POSITIONS = [];
 for (let i = 0; i < 9; i++) { const a = (i/9)*2*Math.PI - Math.PI/2; LED_POSITIONS.push({ x: 75+50*Math.cos(a)-12, y: 75+50*Math.sin(a)-12 }); }
 let ledElements = [];
-function createLeds(id, offset) { const c = document.getElementById(id); for (let i = 0; i < 9; i++) { const el = document.createElement('div'); el.className = 'led'; el.style.left = LED_POSITIONS[i].x+'px'; el.style.top = LED_POSITIONS[i].y+'px'; el.textContent = offset+i; c.appendChild(el); ledElements[offset+i] = el; } }
+function createEyeLeds(id, physicalMap) {
+  const c = document.getElementById(id);
+  for (let logicalIndex = 0; logicalIndex < 9; logicalIndex++) {
+    const physicalIndex = physicalMap[logicalIndex];
+    const el = document.createElement('div');
+    el.className = 'led';
+    el.style.left = LED_POSITIONS[logicalIndex].x+'px';
+    el.style.top = LED_POSITIONS[logicalIndex].y+'px';
+    el.textContent = logicalIndex;
+    c.appendChild(el);
+    ledElements[physicalIndex] = el;
+  }
+}
 function renderLeds() {
   for (let i = 0; i < NUM_LEDS; i++) {
     const l = leds[i];
@@ -1093,7 +1111,7 @@ function updateDesc(text) { document.getElementById('emote-desc').textContent = 
 // =============================================================
 // INIT
 // =============================================================
-createLeds('left-eye', 0); createLeds('right-eye', 9);
+createEyeLeds('left-eye', ARTIE_LEFT_EYE_MAP); createEyeLeds('right-eye', ARTIE_RIGHT_EYE_MAP);
 renderLeds(); updateState(); startTimer();
 </script>
 </body>

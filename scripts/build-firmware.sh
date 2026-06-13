@@ -39,12 +39,10 @@ echo ""
 BUILD_LOG="$REPO_ROOT/.build/build.log"
 
 rc=0
-if ! arduino-cli compile --fqbn "$FQBN" --output-dir "$OUT_DIR" --warnings all \
+arduino-cli compile --fqbn "$FQBN" --output-dir "$OUT_DIR" --warnings all \
      --build-property "build.mrelax=-mrelax" \
      "$BUILD_DIR" \
-     > "$BUILD_LOG" 2>&1; then
-  rc=$?
-fi
+     > "$BUILD_LOG" 2>&1 || rc=$?
 
 # Parse flash usage.
 used=0
@@ -79,6 +77,13 @@ echo "────────────────────────�
 
 if [ "$rc" -ne 0 ]; then
   echo ""
+  if grep -q 'add a 3rd party URL' "$BUILD_LOG"; then
+    echo "ERROR: megaTinyCore platform not installed. Run once:"
+    echo "  arduino-cli config add board_manager.additional_urls http://drazzy.com/package_drazzy.com_index.json"
+    echo "  arduino-cli core update-index"
+    echo "  arduino-cli core install megaTinyCore:megaavr@2.6.11"
+    echo ""
+  fi
   echo "BUILD FAILED — compiler output:"
   cat "$BUILD_LOG"
   exit "$rc"
