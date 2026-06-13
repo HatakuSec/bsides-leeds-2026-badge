@@ -1024,7 +1024,9 @@ function resetCounts() { emoteStats = {}; calmGapTotalFrames = 0; updateState();
 // RENDERING
 // =============================================================
 const LED_POSITIONS = [];
-for (let i = 0; i < 9; i++) { const a = (i/9)*2*Math.PI - Math.PI/2; LED_POSITIONS.push({ x: 75+50*Math.cos(a)-12, y: 75+50*Math.sin(a)-12 }); }
+// Hardware ring has 2 LEDs at the top and 1 at the bottom — offset by half a
+// step (π/9 = 20°) so logical 0 and 8 appear at the top, logical 4 at the bottom.
+for (let i = 0; i < 9; i++) { const a = (i/9)*2*Math.PI - Math.PI/2 + Math.PI/9; LED_POSITIONS.push({ x: 75+50*Math.cos(a)-12, y: 75+50*Math.sin(a)-12 }); }
 let ledElements = [];
 function createEyeLeds(id, physicalMap) {
   const c = document.getElementById(id);
